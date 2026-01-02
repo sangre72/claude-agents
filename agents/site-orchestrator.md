@@ -43,10 +43,17 @@ site-orchestrator (최상위 지휘자)
      │     ├─ [3] category-manager: 게시판 카테고리 관리
      │     └─ [4] menu-manager: 통합 메뉴 관리
      │
+     ├─ 인증 시스템
+     │     ├─ auth-backend: 인증 Backend API
+     │     └─ auth-frontend: 인증 Frontend UI
+     │
+     ├─ 메뉴 시스템
+     │     ├─ menu-backend: 메뉴 Backend API
+     │     └─ menu-frontend: 메뉴 Frontend UI
+     │
      ├─ 공통 인프라
-     │     ├─ auth-module: 인증/인가
-     │     ├─ permission-module: 권한 관리
-     │     └─ openapi-module: API 문서 자동화
+     │     ├─ permission-module: 권한 관리 (TODO)
+     │     └─ openapi-module: API 문서 자동화 (TODO)
      │
      ├─ 기능 모듈
      │     ├─ board-generator: 게시판 생성 (오케스트레이터)
@@ -110,18 +117,25 @@ site-orchestrator (최상위 지휘자)
 # 1. 공유 스키마 (필수 - 가장 먼저)
 Use shared-schema --init
 
-# 2. 테넌트 관리 (최우선)
+# 2. 인증 시스템
+Use auth-backend --init --type=phone
+Use auth-frontend --init
+
+# 3. 테넌트 관리 (멀티사이트 필요 시)
 Use tenant-manager --init
 
-# 3. 카테고리 관리 (최우선)
+# 4. 카테고리 관리
 Use category-manager --init
 
-# 4. 메뉴 관리 (최우선)
-Use menu-manager --init
+# 5. 메뉴 관리
+Use menu-backend --init
+Use menu-frontend --init
+Use menu-manager --type=site
 
-# 5. 게시판 생성 (카테고리 연동)
+# 6. 게시판 생성
 Use board-generator --init
 Use board-generator --template notice
+Use board-generator --template free
 ```
 
 ---
@@ -145,26 +159,43 @@ Use site-orchestrator to add board faq     # FAQ
 Use site-orchestrator to add board review  # 후기게시판 (커스텀)
 ```
 
-### 2. 인증 시스템 (기존)
+### 2. 인증 시스템
 
-프로젝트에 이미 구현되어 있는 기능:
-- 휴대폰 인증 기반 로그인/회원가입
+| 에이전트 | 설명 |
+|----------|------|
+| `auth-backend` | Backend API (JWT, 휴대폰/이메일/소셜 로그인) |
+| `auth-frontend` | Frontend UI (로그인, 회원가입, 프로필) |
+
+**지원 기능:**
+- 휴대폰 인증 기반 로그인/회원가입 (OTP)
+- 이메일/비밀번호 인증
+- 소셜 로그인 (카카오, 네이버, 구글)
 - JWT access/refresh 토큰
 - 역할 기반 권한 (customer, manager, admin)
 
-### 3. 메뉴 시스템 (TODO)
+**사용 예시:**
+```bash
+Use auth-backend --init --type=phone       # 휴대폰 인증 기반
+Use auth-backend --feature=social-kakao    # 카카오 소셜 로그인 추가
+Use auth-frontend --init                   # Frontend UI 생성
+```
 
-```yaml
-# 메뉴 구조
-메인 메뉴:
-  - 홈
-  - 서비스 소개
-  - 동행인 찾기
-  - 게시판:
-      - 공지사항
-      - 자유게시판
-      - Q&A
-  - 마이페이지
+### 3. 메뉴 시스템
+
+| 에이전트 | 설명 |
+|----------|------|
+| `menu-manager` | 통합 메뉴 관리 (프로토콜 문서) |
+| `menu-backend` | Backend API (CRUD, 순서 변경) |
+| `menu-frontend` | Admin UI (TreeView, 드래그앤드롭) |
+
+**메뉴 타입:** site, user, admin, header_utility, footer_utility
+
+**사용 예시:**
+```bash
+Use menu-backend --init
+Use menu-frontend --init
+Use menu-manager --type=site    # 사이트 전체 메뉴
+Use menu-manager --type=admin   # 관리자 메뉴
 ```
 
 ### 4. 권한 연동 (TODO)
@@ -340,9 +371,28 @@ test_account:
 
 ### 생성 완료
 
+**오케스트레이터:**
 | 에이전트 | 파일 | 설명 |
 |----------|------|------|
 | site-orchestrator | `site-orchestrator.md` | 사이트 전체 지휘자 |
+| project-init | `project-init.md` | 프로젝트 초기화 (CLAUDE.md + 인증 + 메뉴) |
+
+**인증 시스템:**
+| 에이전트 | 파일 | 설명 |
+|----------|------|------|
+| auth-backend | `auth-backend.md` | 인증 Backend API (JWT, 휴대폰/이메일/소셜) |
+| auth-frontend | `auth-frontend.md` | 인증 Frontend UI (로그인, 회원가입) |
+
+**메뉴 시스템:**
+| 에이전트 | 파일 | 설명 |
+|----------|------|------|
+| menu-manager | `menu-manager.md` | 통합 메뉴 관리 (프로토콜) |
+| menu-backend | `menu-backend.md` | 메뉴 Backend API |
+| menu-frontend | `menu-frontend.md` | 메뉴 Frontend UI (Admin TreeView) |
+
+**게시판 시스템:**
+| 에이전트 | 파일 | 설명 |
+|----------|------|------|
 | board-generator | `board-generator.md` | 게시판 생성 오케스트레이터 |
 | board-schema | `board-schema.md` | DB 스키마 정의 (공유) |
 | board-templates | `board-templates.md` | 템플릿 정의 (공유) |
@@ -355,15 +405,13 @@ test_account:
 | board-frontend-components | `board-frontend-components.md` | Frontend 컴포넌트 |
 | board-tester | `board-tester.md` | 게시판 테스트 |
 | board-fixer | `board-fixer.md` | 게시판 에러 수정 |
-| project-init | `project-init.md` | 프로젝트 초기화 (CLAUDE.md 생성) |
 
 ### TODO
 
 | 에이전트 | 설명 |
 |----------|------|
-| auth-module | 인증 시스템 관리 |
 | permission-module | 권한 시스템 관리 |
-| openapi-module | OpenAPI 문서 관리 |
+| openapi-module | OpenAPI 문서 자동 생성 |
 | reservation-module | 예약 시스템 |
 | payment-module | 결제 시스템 |
 | site-tester | 사이트 전체 테스트 |
