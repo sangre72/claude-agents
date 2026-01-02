@@ -598,6 +598,80 @@ CREATE TABLE board_likes (
 
 ---
 
+## 카테고리 연동 (category-manager)
+
+> **고급 카테고리 관리**가 필요한 경우 `category-manager` 에이전트를 사용합니다.
+
+### 기본 카테고리 vs 고급 카테고리
+
+| 기능 | 기본 (board_categories) | 고급 (category-manager) |
+|------|------------------------|-------------------------|
+| 계층 구조 | X (단일 레벨) | O (무한 depth) |
+| 드래그앤드롭 | X | O |
+| 권한 설정 | X | O (카테고리별) |
+| 색상/아이콘 | X | O |
+| Admin UI | 게시판 설정 내 | 독립 관리 화면 |
+
+### 연동 방법
+
+**1. 게시판 생성 시 카테고리 사용 설정**
+
+```javascript
+// 템플릿에서 카테고리 사용
+{
+  board_code: 'qna',
+  board_name: 'Q&A',
+  use_category: true,                    // 카테고리 사용
+  category_required: false,              // 글 작성 시 필수 여부
+  categories: ['서비스', '결제', '기타'] // 기본 카테고리 생성
+}
+```
+
+**2. 고급 카테고리 관리 (별도 UI)**
+
+```bash
+# 게시판 생성 후 카테고리 관리
+Use category-manager --board=qna
+
+# 또는 Admin UI에서
+/admin/boards/{boardId}/categories
+```
+
+**3. 게시글 작성 시 카테고리 선택**
+
+```tsx
+// 게시글 작성 폼에서 카테고리 Select
+<FormControl>
+  <InputLabel>카테고리</InputLabel>
+  <Select
+    value={categoryId}
+    onChange={(e) => setCategoryId(e.target.value)}
+    required={board.category_required}
+  >
+    {categories.map((cat) => (
+      <MenuItem key={cat.id} value={cat.id}>
+        {'　'.repeat(cat.depth)}{cat.category_name}
+      </MenuItem>
+    ))}
+  </Select>
+</FormControl>
+```
+
+### 카테고리 테이블 관계
+
+```
+boards
+  │
+  └──► categories (category-manager가 관리)
+        │
+        └──► board_posts.category_id (FK)
+```
+
+> **참고**: 기본 `board_categories` 테이블은 단순 카테고리용입니다.
+> 계층형 카테고리가 필요하면 `category-manager`의 `categories` 테이블을 사용하세요.
+
+---
+
 ## 게시판 관리 기능 (관리자)
 
 > **관리자 화면**에서 게시판 생성/수정/삭제 가능
