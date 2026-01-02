@@ -592,6 +592,34 @@ async function getUserRoles(userId) {
 
 > **CRITICAL**: 드래그앤드롭은 메뉴 관리의 핵심 기능입니다. 반드시 구현해야 합니다.
 
+#### 드래그앤드롭 사용법 (사용자 가이드)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  드래그앤드롭 동작 방식                                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. 순서 변경 (같은 레벨)                                      │
+│     ┌─ 메뉴A ─┐          드래그하여        ┌─ 메뉴B ─┐        │
+│     └────────┘          메뉴 사이에        └────────┘        │
+│     ┌─ 메뉴B ─┐  ──────> 드롭하면    ──>   ┌─ 메뉴A ─┐        │
+│     └────────┘          순서 변경          └────────┘        │
+│                                                             │
+│  2. 부모-자식 관계 만들기                                       │
+│     ┌─ Home ──┐                                             │
+│     └────────┘          메뉴를 다른        ┌─ Home ──────┐   │
+│     ┌─ About ─┐  ──────> 메뉴 "위에"  ──>  │  └─ About   │   │
+│     └────────┘          드롭하면 자식으로   └────────────┘   │
+│                                                             │
+│  💡 TIP: 노드 위에 잠시 호버하면 자식으로 들어갑니다            │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**드롭 위치에 따른 동작:**
+- **노드 사이** (선이 나타남): 같은 레벨에서 순서 변경
+- **노드 위** (배경 하이라이트): 해당 노드의 자식으로 이동
+
 #### 필수 구현 체크리스트
 
 | 항목 | 설명 | 필수 |
@@ -599,8 +627,22 @@ async function getUserRoles(userId) {
 | **순서 변경 API** | 같은 부모 내에서 순서 변경 | ✅ |
 | **메뉴 이동 API** | 다른 부모로 메뉴 이동 | ✅ |
 | **프론트엔드 DnD** | 환경에 맞는 라이브러리 사용 | ✅ |
+| **droppable: true** | 모든 노드에 자식 드롭 허용 | ✅ |
 | **실시간 UI 반영** | 드롭 후 즉시 트리 갱신 | ✅ |
 | **에러 롤백** | 실패 시 원래 위치로 복원 | ✅ |
+
+#### CRITICAL: NodeModel 변환 시 droppable 설정
+
+```typescript
+// API 응답을 @minoru/react-dnd-treeview NodeModel로 변환
+const treeData = apiData.map(menu => ({
+  id: menu.id,
+  parent: menu.parent_id ?? 0,
+  text: menu.menu_name,
+  droppable: true,  // CRITICAL: 이 설정이 없으면 자식으로 드롭 불가!
+  data: menu,
+}));
+```
 
 #### Backend API (Express)
 
@@ -2080,9 +2122,18 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
   const queryClient = useQueryClient();
 
   // 메뉴 트리 데이터 조회
+  // CRITICAL: select 옵션으로 @minoru/react-dnd-treeview NodeModel 형식으로 변환
   const { data: treeData = [], isLoading, error } = useQuery({
     queryKey: ['admin-menus', menuType],
     queryFn: () => fetchMenuTree(menuType),
+    // API 응답을 NodeModel 형식으로 변환 (droppable: true 필수!)
+    select: (data: any[]) => data.map((menu: Menu) => ({
+      id: menu.id,
+      parent: menu.parent_id ?? 0,  // null이면 0 (루트)
+      text: menu.menu_name,
+      droppable: true,              // CRITICAL: 모든 노드에 자식 드롭 허용
+      data: menu,                   // 원본 메뉴 데이터 보존
+    })),
   });
 
   // 순서 변경 뮤테이션
@@ -2232,12 +2283,29 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
             dragPreviewRender={dragPreviewRender}
             sort={false}
             insertDroppableFirst={false}
-            canDrop={(tree, { dragSource, dropTargetId }) => {
-              // 자기 자신이나 하위로 드롭 금지
-              if (dragSource?.parent === dropTargetId) return true;
+            // CRITICAL: canDrop - 자기 자신 및 하위 노드로 드롭 금지
+            canDrop={(tree, { dragSource, dropTargetId, dropTarget }) => {
+              // 자기 자신으로 드롭 금지
+              if (dragSource?.id === dropTargetId) return false;
+
+              // 자신의 하위 노드로 드롭 금지 (순환 참조 방지)
+              const isDescendant = (parentId: number | string, childId: number | string): boolean => {
+                const children = tree.filter(node => node.parent === parentId);
+                for (const child of children) {
+                  if (child.id === childId) return true;
+                  if (isDescendant(child.id, childId)) return true;
+                }
+                return false;
+              };
+              if (dragSource && isDescendant(dragSource.id, dropTargetId)) return false;
+
               return true;
             }}
-            dropTargetOffset={5}
+            // CRITICAL: dropTargetOffset - 노드 위에 호버하면 자식으로 드롭
+            // 10px 영역 안에 호버하면 "안으로 드롭" (자식으로 만들기)
+            dropTargetOffset={10}
+            // 초기 열림 상태 (전체 열기)
+            initialOpen={true}
             placeholderRender={(node, { depth }) => (
               <Box sx={{ ml: depth * 2, height: 2, bgcolor: 'primary.main', borderRadius: 1 }} />
             )}
