@@ -2201,7 +2201,7 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
     [treeData, menuType, reorderMutation, moveMutation]
   );
 
-  // 트리 노드 렌더링 (Windows Explorer 스타일)
+  // 트리 노드 렌더링 (Explorer 스타일 - 테마 색상 사용)
   const renderNode = useCallback(
     (node: NodeModel<Menu>, { depth, isOpen, onToggle }: { depth: number; isOpen: boolean; onToggle: () => void }) => {
       const hasChildren = treeData.some((n) => n.parent === node.id);
@@ -2210,43 +2210,48 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
       return (
         <Box
           onClick={() => onSelect(node.data ?? null, false)}
-          sx={{
+          sx={(theme) => ({
             display: 'flex',
             alignItems: 'center',
             height: 28,
             cursor: 'pointer',
             userSelect: 'none',
-            // Explorer 스타일: 선택 시 연한 파란색 배경 + 테두리
-            bgcolor: isSelected ? '#cce8ff' : 'transparent',
-            border: isSelected ? '1px solid #99d1ff' : '1px solid transparent',
+            // 테마 기반 색상: 선택 시 primary.light 배경
+            bgcolor: isSelected ? theme.palette.action.selected : 'transparent',
+            border: isSelected
+              ? `1px solid ${theme.palette.primary.light}`
+              : '1px solid transparent',
             borderRadius: 0.5,
             '&:hover': {
-              bgcolor: isSelected ? '#cce8ff' : '#e5f3ff',
-              border: isSelected ? '1px solid #99d1ff' : '1px solid #cce8ff',
+              bgcolor: isSelected
+                ? theme.palette.action.selected
+                : theme.palette.action.hover,
+              border: isSelected
+                ? `1px solid ${theme.palette.primary.light}`
+                : `1px solid ${theme.palette.divider}`,
             },
-            // 들여쓰기 (depth * 20px)
             pl: `${depth * 20 + 4}px`,
             pr: 1,
-          }}
+          })}
         >
-          {/* 트리 가이드 라인 (Explorer 스타일) */}
+          {/* 트리 가이드 라인 */}
           {depth > 0 && (
             <Box
-              sx={{
+              sx={(theme) => ({
                 position: 'absolute',
                 left: `${(depth - 1) * 20 + 14}px`,
                 top: 0,
                 bottom: 0,
                 width: 1,
-                bgcolor: '#e0e0e0',
-              }}
+                bgcolor: theme.palette.divider,
+              })}
             />
           )}
 
-          {/* 펼침/접힘 화살표 (Explorer 스타일: ▶ / ▼) */}
+          {/* 펼침/접힘 화살표 */}
           <Box
             onClick={(e) => { e.stopPropagation(); hasChildren && onToggle(); }}
-            sx={{
+            sx={(theme) => ({
               width: 16,
               height: 16,
               display: 'flex',
@@ -2254,40 +2259,39 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
               justifyContent: 'center',
               mr: 0.5,
               cursor: hasChildren ? 'pointer' : 'default',
-              color: '#666',
-              fontSize: 10,
-              '&:hover': hasChildren ? { color: '#333' } : {},
-            }}
+              color: theme.palette.text.secondary,
+              '&:hover': hasChildren ? { color: theme.palette.text.primary } : {},
+            })}
           >
             {hasChildren && (
               isOpen ? <ExpandMoreIcon sx={{ fontSize: 16 }} /> : <ChevronRightIcon sx={{ fontSize: 16 }} />
             )}
           </Box>
 
-          {/* 폴더/파일 아이콘 (Explorer 스타일) */}
+          {/* 폴더/파일 아이콘 (테마 색상) */}
           <Box sx={{ mr: 0.75, display: 'flex', alignItems: 'center' }}>
             {hasChildren ? (
               isOpen ? (
-                <FolderOpenIcon sx={{ fontSize: 18, color: '#f4c542' }} />  // 노란색 열린 폴더
+                <FolderOpenIcon sx={(theme) => ({ fontSize: 18, color: theme.palette.warning.main })} />
               ) : (
-                <FolderIcon sx={{ fontSize: 18, color: '#f4c542' }} />      // 노란색 닫힌 폴더
+                <FolderIcon sx={(theme) => ({ fontSize: 18, color: theme.palette.warning.main })} />
               )
             ) : (
-              <DescriptionIcon sx={{ fontSize: 18, color: '#90caf9' }} />   // 파란색 문서
+              <DescriptionIcon sx={(theme) => ({ fontSize: 18, color: theme.palette.info.light })} />
             )}
           </Box>
 
           {/* 메뉴명 */}
           <Typography
             variant="body2"
-            sx={{
+            sx={(theme) => ({
               fontSize: 13,
               fontWeight: isSelected ? 500 : 400,
-              color: '#333',
+              color: theme.palette.text.primary,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-            }}
+            })}
           >
             {node.text}
           </Typography>
@@ -2296,7 +2300,7 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
           {hasChildren && (
             <Typography
               variant="caption"
-              sx={{ ml: 1, color: '#999', fontSize: 11 }}
+              sx={(theme) => ({ ml: 1, color: theme.palette.text.disabled, fontSize: 11 })}
             >
               ({treeData.filter(n => n.parent === node.id).length})
             </Typography>
@@ -2307,20 +2311,20 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
     [treeData, selectedId, onSelect]
   );
 
-  // 드래그 프리뷰 (Explorer 스타일)
+  // 드래그 프리뷰 (테마 색상)
   const dragPreviewRender = (monitorProps: DragLayerMonitorProps<Menu>) => (
     <Box
-      sx={{
+      sx={(theme) => ({
         display: 'flex',
         alignItems: 'center',
         p: 0.75,
-        bgcolor: '#fff',
-        border: '1px solid #cce8ff',
+        bgcolor: theme.palette.background.paper,
+        border: `1px solid ${theme.palette.primary.light}`,
         borderRadius: 0.5,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-      }}
+        boxShadow: 2,
+      })}
     >
-      <FolderIcon sx={{ fontSize: 16, color: '#f4c542', mr: 0.75 }} />
+      <FolderIcon sx={(theme) => ({ fontSize: 16, color: theme.palette.warning.main, mr: 0.75 })} />
       <Typography variant="body2" sx={{ fontSize: 13 }}>{monitorProps.item.text}</Typography>
     </Box>
   );
@@ -2338,33 +2342,33 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
 
   return (
     <Box
-      sx={{
+      sx={(theme) => ({
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        bgcolor: '#fff',
-        borderRight: '1px solid #e0e0e0',
-      }}
+        bgcolor: theme.palette.background.paper,
+        borderRight: `1px solid ${theme.palette.divider}`,
+      })}
     >
-      {/* 헤더: Explorer 스타일 */}
+      {/* 헤더 */}
       <Box
-        sx={{
+        sx={(theme) => ({
           px: 1.5,
           py: 1,
-          borderBottom: '1px solid #e0e0e0',
-          bgcolor: '#fafafa',
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          bgcolor: theme.palette.grey[50],
           display: 'flex',
           alignItems: 'center',
           gap: 1,
-        }}
+        })}
       >
-        <FolderIcon sx={{ fontSize: 18, color: '#f4c542' }} />
-        <Typography sx={{ fontSize: 13, fontWeight: 500, color: '#333' }}>
+        <FolderIcon sx={(theme) => ({ fontSize: 18, color: theme.palette.warning.main })} />
+        <Typography sx={(theme) => ({ fontSize: 13, fontWeight: 500, color: theme.palette.text.primary })}>
           메뉴 관리
         </Typography>
       </Box>
 
-      {/* 메뉴 타입 탭 (Explorer 탭 스타일) */}
+      {/* 메뉴 타입 탭 */}
       <Tabs
         value={menuType}
         onChange={(_, v) => {
@@ -2372,9 +2376,9 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
           onSelect(null, false);
           onMenuTypeChange?.(v);
         }}
-        sx={{
+        sx={(theme) => ({
           minHeight: 32,
-          borderBottom: '1px solid #e0e0e0',
+          borderBottom: `1px solid ${theme.palette.divider}`,
           '& .MuiTab-root': {
             minHeight: 32,
             fontSize: 12,
@@ -2382,28 +2386,27 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
             px: 2,
           },
           '& .Mui-selected': {
-            bgcolor: '#fff',
-            borderBottom: '2px solid #1976d2',
+            bgcolor: theme.palette.background.paper,
           },
-        }}
+        })}
       >
         <Tab label="사이트" value="site" />
         <Tab label="사용자" value="user" />
         <Tab label="관리자" value="admin" />
       </Tabs>
 
-      {/* 트리 영역 (Explorer 스타일) */}
+      {/* 트리 영역 */}
       <Box
-        sx={{
+        sx={(theme) => ({
           flex: 1,
           overflow: 'auto',
           py: 0.5,
-          // 스크롤바 스타일 (Windows 스타일)
+          // 스크롤바 스타일
           '&::-webkit-scrollbar': { width: 8 },
-          '&::-webkit-scrollbar-track': { bgcolor: '#f5f5f5' },
-          '&::-webkit-scrollbar-thumb': { bgcolor: '#c1c1c1', borderRadius: 4 },
-          '&::-webkit-scrollbar-thumb:hover': { bgcolor: '#a8a8a8' },
-        }}
+          '&::-webkit-scrollbar-track': { bgcolor: theme.palette.grey[100] },
+          '&::-webkit-scrollbar-thumb': { bgcolor: theme.palette.grey[400], borderRadius: 4 },
+          '&::-webkit-scrollbar-thumb:hover': { bgcolor: theme.palette.grey[500] },
+        })}
       >
         <DndProvider backend={HTML5Backend}>
           <Tree
@@ -2429,16 +2432,16 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
             }}
             dropTargetOffset={10}
             initialOpen={true}
-            // 드롭 placeholder (Explorer 스타일 - 파란색 선)
+            // 드롭 placeholder (테마 색상)
             placeholderRender={(node, { depth }) => (
               <Box
-                sx={{
+                sx={(theme) => ({
                   ml: `${depth * 20 + 24}px`,
                   height: 2,
-                  bgcolor: '#1976d2',
+                  bgcolor: theme.palette.primary.main,
                   borderRadius: 1,
                   my: 0.25,
-                }}
+                })}
               />
             )}
           />
@@ -2446,33 +2449,34 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
 
         {/* 빈 상태 */}
         {treeData.length === 0 && (
-          <Box sx={{ p: 2, textAlign: 'center', color: '#999', fontSize: 13 }}>
+          <Box sx={(theme) => ({ p: 2, textAlign: 'center', color: theme.palette.text.disabled, fontSize: 13 })}>
             메뉴가 없습니다.
           </Box>
         )}
       </Box>
 
-      {/* 하단: 새 메뉴 추가 버튼 (Explorer 스타일) */}
-      <Box sx={{ p: 1, borderTop: '1px solid #e0e0e0', bgcolor: '#fafafa' }}>
+      {/* 하단: 새 메뉴 추가 버튼 */}
+      <Box sx={(theme) => ({ p: 1, borderTop: `1px solid ${theme.palette.divider}`, bgcolor: theme.palette.grey[50] })}>
         <Button
           fullWidth
           startIcon={<AddIcon sx={{ fontSize: 16 }} />}
           onClick={() => onSelect({ menu_type: menuType } as Menu, true)}
-          sx={{
+          sx={(theme) => ({
             justifyContent: 'flex-start',
             textTransform: 'none',
             fontSize: 13,
-            color: '#333',
-            bgcolor: '#fff',
-            border: '1px solid #ddd',
+            color: theme.palette.text.primary,
+            bgcolor: theme.palette.background.paper,
+            border: `1px solid ${theme.palette.divider}`,
             '&:hover': {
-              bgcolor: '#e5f3ff',
-              borderColor: '#cce8ff',
+              bgcolor: theme.palette.action.hover,
+              borderColor: theme.palette.primary.light,
             },
-          }}
-      >
-        새 메뉴 추가
-      </Button>
+          })}
+        >
+          새 메뉴 추가
+        </Button>
+      </Box>
     </Box>
   );
 }
@@ -2888,18 +2892,39 @@ export function MenuDetailPanel({ menu, isAddMode, defaultMenuType = 'site', onS
   const isLoading = saveMutation.isPending || deleteMutation.isPending;
 
   // 부모 메뉴 경로 계산 (Breadcrumb용)
-  const getMenuPath = (): string[] => {
+  // CRITICAL: parentMenus는 NodeModel 형식 또는 원본 Menu 형식일 수 있음
+  const getMenuPath = (): { id: number; name: string }[] => {
     if (!formData.parent_id) return [];
 
-    const path: string[] = [];
-    let currentParentId = formData.parent_id;
+    const path: { id: number; name: string }[] = [];
+    let currentParentId: number | null = formData.parent_id;
 
-    // parentMenus에서 경로 추적 (최대 5단계)
-    for (let i = 0; i < 5 && currentParentId; i++) {
-      const parent = parentMenus.find((m: any) => m.id === currentParentId);
-      if (parent) {
-        path.unshift(parent.text || parent.menu_name);
-        currentParentId = parent.parent_id;
+    // parentMenus에서 경로 추적 (최대 10단계)
+    for (let i = 0; i < 10 && currentParentId; i++) {
+      // NodeModel 형식: { id, parent, text, data } 또는 Menu 형식: { id, parent_id, menu_name }
+      const found = parentMenus.find((m: any) => {
+        const menuId = m.id ?? m.data?.id;
+        return menuId === currentParentId;
+      });
+
+      if (found) {
+        // NodeModel인 경우
+        if (found.text !== undefined) {
+          path.unshift({
+            id: found.id as number,
+            name: found.text || found.data?.menu_name || '(이름없음)',
+          });
+          // parent가 0이면 루트이므로 null로 처리
+          currentParentId = found.parent === 0 ? null : (found.parent as number);
+        }
+        // 원본 Menu 형식인 경우
+        else {
+          path.unshift({
+            id: found.id,
+            name: found.menu_name || '(이름없음)',
+          });
+          currentParentId = found.parent_id ?? null;
+        }
       } else {
         break;
       }
@@ -2908,7 +2933,7 @@ export function MenuDetailPanel({ menu, isAddMode, defaultMenuType = 'site', onS
   };
 
   const menuPath = getMenuPath();
-  const parentMenuName = menuPath.length > 0 ? menuPath[menuPath.length - 1] : null;
+  const parentMenuName = menuPath.length > 0 ? menuPath[menuPath.length - 1]?.name : null;
 
   return (
     <Paper sx={{ p: 3, height: '100%', overflow: 'auto' }}>
@@ -2933,9 +2958,9 @@ export function MenuDetailPanel({ menu, isAddMode, defaultMenuType = 'site', onS
 
           {menuPath.length > 0 ? (
             <>
-              {menuPath.map((name, idx) => (
-                <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Chip label={name} size="small" variant="outlined" />
+              {menuPath.map((item, idx) => (
+                <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Chip label={item.name} size="small" variant="outlined" />
                   <Typography variant="body2" color="text.secondary">{'>'}</Typography>
                 </Box>
               ))}
