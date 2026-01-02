@@ -13,6 +13,61 @@ model: haiku
 
 ---
 
+## 필수 원칙 (CRITICAL)
+
+> **이 에이전트는 다음 원칙을 반드시 준수합니다.**
+
+### 1. Security First (보안 우선)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     보안 체크리스트                           │
+├─────────────────────────────────────────────────────────────┤
+│ ✓ 모든 입력값 검증 (tenant_code, domain 등)                  │
+│ ✓ SQL Injection 방지 - Parameterized Query 필수             │
+│ ✓ XSS 방지 - 테넌트명, 설명 등 이스케이프                    │
+│ ✓ 권한 검증 - super_admin만 테넌트 생성/삭제 가능            │
+│ ✓ tenant_code 형식 검증 - ^[a-z0-9_]+$ 패턴만 허용           │
+│ ✓ 도메인 검증 - 유효한 도메인 형식만 허용                    │
+│ ✓ 설정(JSON) 검증 - 허용된 키만 저장                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 2. Error Handling First (오류 처리 우선)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   오류 처리 체크리스트                        │
+├─────────────────────────────────────────────────────────────┤
+│ ✓ 모든 DB 작업에 try-catch 필수                              │
+│ ✓ 테넌트 존재 여부 확인 후 작업                              │
+│ ✓ 기본 테넌트(default) 삭제 방지                             │
+│ ✓ 트랜잭션 롤백 처리                                         │
+│ ✓ 에러 로깅 (console.error)                                  │
+│ ✓ 사용자에게 안전한 에러 메시지 반환                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 3. 구현 순서
+
+```
+1. 입력 검증 (Input Validation)
+   └─ tenant_code, domain, settings 형식 검증
+2. 인증/인가 확인 (Authentication/Authorization)
+   └─ super_admin 권한 확인
+3. 에러 핸들링 구조 설정 (try-catch)
+4. 비즈니스 로직 구현
+5. 응답 처리
+```
+
+### 4. 참조 규칙
+
+- **코딩 가이드**: `~/.claude/skills/coding-guide/SKILL.md`
+- **모듈화 원칙**: `~/.claude/skills/modular-check/SKILL.md`
+- **리팩토링 원칙**: `~/.claude/skills/refactor/SKILL.md`
+
+---
+
 ## 사용법
 
 ```bash
@@ -194,6 +249,97 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+
+// =====================================
+// 입력 검증 함수 (Security First)
+// =====================================
+
+/**
+ * 문자열 입력 검증 및 XSS 방지
+ * @param {any} input - 입력값
+ * @param {string} fieldName - 필드명 (에러 메시지용)
+ * @param {number} maxLength - 최대 길이 (기본: 100)
+ * @returns {string} 검증된 문자열
+ * @throws {Error} 검증 실패 시
+ */
+const validateInput = (input, fieldName, maxLength = 100) => {
+  if (input === null || input === undefined) {
+    return null;
+  }
+  if (typeof input !== 'string') {
+    throw new Error(`${fieldName}은(는) 문자열이어야 합니다.`);
+  }
+  if (input.length > maxLength) {
+    throw new Error(`${fieldName}은(는) ${maxLength}자를 초과할 수 없습니다.`);
+  }
+  // XSS 방지를 위한 위험 패턴 검사
+  const dangerousPatterns = /<script|javascript:|onerror=|onclick=|--/i;
+  if (dangerousPatterns.test(input)) {
+    throw new Error(`${fieldName}에 허용되지 않는 문자가 포함되어 있습니다.`);
+  }
+  return input.trim();
+};
+
+/**
+ * 테넌트 코드 형식 검증
+ * @param {string} code - 테넌트 코드
+ * @returns {boolean} 유효 여부
+ */
+const isValidTenantCode = (code) => {
+  if (!code || typeof code !== 'string') return false;
+  // 영문 소문자, 숫자, 언더스코어만 허용 (3-50자)
+  return /^[a-z0-9_]{3,50}$/.test(code);
+};
+
+/**
+ * 도메인 형식 검증
+ * @param {string} domain - 도메인
+ * @returns {boolean} 유효 여부
+ */
+const isValidDomain = (domain) => {
+  if (!domain) return true; // 선택 필드
+  // 기본 도메인 형식 검증
+  return /^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.[a-zA-Z]{2,}$/.test(domain);
+};
+
+/**
+ * 이메일 형식 검증
+ * @param {string} email - 이메일
+ * @returns {boolean} 유효 여부
+ */
+const isValidEmail = (email) => {
+  if (!email) return true; // 선택 필드
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
+
+/**
+ * 테넌트 설정 검증 (허용된 키만)
+ * @param {object} settings - 설정 객체
+ * @returns {object} 검증된 설정
+ */
+const validateSettings = (settings) => {
+  if (!settings || typeof settings !== 'object') return {};
+
+  const allowedKeys = [
+    'theme', 'logo', 'favicon', 'language', 'timezone',
+    'primaryColor', 'companyName', 'contactEmail', 'contactPhone'
+  ];
+
+  const validated = {};
+  for (const key of allowedKeys) {
+    if (settings[key] !== undefined) {
+      // 문자열 값만 허용
+      if (typeof settings[key] === 'string') {
+        validated[key] = validateInput(settings[key], key, 255);
+      }
+    }
+  }
+  return validated;
+};
+
+// =====================================
+// API 엔드포인트
+// =====================================
 
 // 테넌트 목록 조회
 router.get('/', authenticateToken, requireRole(['super_admin']), async (req, res) => {

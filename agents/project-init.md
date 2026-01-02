@@ -144,6 +144,131 @@ Use menu-manager --utility=footer        # 푸터 유틸리티 (이용약관 등
 | GET | `/api/menus` | 사용자용 메뉴 조회 |
 | GET | `/api/menus/:type` | 타입별 메뉴 조회 |
 
+### Phase 6: 테넌트 관리 (멀티사이트 필요 시)
+
+> **멀티 테넌시**가 필요한 경우에만 실행합니다.
+
+```bash
+# 테넌트 관리 시스템 초기화
+Use tenant-manager --init
+
+# 테넌트 추가
+Use tenant-manager to create tenant "사이트A" with code: site_a
+```
+
+**생성되는 API 엔드포인트 (테넌트 관리):**
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| GET | `/api/tenants` | 테넌트 목록 조회 (super_admin만) |
+| GET | `/api/tenants/:id` | 테넌트 상세 조회 |
+| POST | `/api/tenants` | 테넌트 생성 (super_admin만) |
+| PUT | `/api/tenants/:id` | 테넌트 수정 |
+| DELETE | `/api/tenants/:id` | 테넌트 삭제 (Soft Delete) |
+| GET | `/api/tenants/current/info` | 현재 테넌트 정보 |
+
+**테넌트 설정 항목:**
+
+| 설정 | 설명 |
+|------|------|
+| `domain` | 커스텀 도메인 (예: www.site-a.com) |
+| `subdomain` | 서브도메인 (예: site-a.example.com) |
+| `theme` | 테마 설정 (default, dark, light) |
+| `logo` | 로고 이미지 경로 |
+| `primaryColor` | 기본 색상 |
+| `language` | 기본 언어 (ko, en, ja, zh) |
+
+### Phase 7: 카테고리 관리
+
+> 게시판에서 **카테고리 분류**가 필요한 경우 실행합니다.
+
+```bash
+# 카테고리 관리 시스템 초기화
+Use category-manager --init
+
+# 게시판에 카테고리 추가
+Use category-manager to add category "공지" to board "notice"
+```
+
+**생성되는 API 엔드포인트 (카테고리 관리):**
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| GET | `/api/categories/board/:boardId` | 카테고리 목록 (트리) |
+| GET | `/api/categories/board/:boardId/flat` | 카테고리 목록 (flat) |
+| GET | `/api/categories/:id` | 카테고리 상세 |
+| POST | `/api/categories` | 카테고리 생성 (admin/manager) |
+| PUT | `/api/categories/:id` | 카테고리 수정 |
+| DELETE | `/api/categories/:id` | 카테고리 삭제 |
+| PUT | `/api/categories/reorder` | 순서 변경 (드래그앤드롭) |
+
+**카테고리 기능:**
+
+| 기능 | 설명 |
+|------|------|
+| 계층형 카테고리 | 무제한 depth, path 기반 빠른 조회 |
+| 순서 관리 | 드래그앤드롭으로 순서/계층 변경 |
+| 권한 설정 | 카테고리별 읽기/쓰기 권한 |
+| 색상/아이콘 | 시각적 구분을 위한 설정 |
+
+### Phase 8: 게시판 생성
+
+> 기본 게시판 템플릿을 생성합니다.
+
+```bash
+# 게시판 시스템 초기화
+Use board-generator --init
+
+# 공지사항 게시판 생성
+Use board-generator --template notice
+
+# FAQ 게시판 생성
+Use board-generator --template faq
+
+# 자유게시판 생성
+Use board-generator --template free
+
+# Q&A 게시판 생성
+Use board-generator --template qna
+
+# 갤러리 게시판 생성
+Use board-generator --template gallery
+
+# 리뷰 게시판 생성
+Use board-generator --template review
+
+# 커스텀 게시판 생성
+Use board-generator to create "상품문의" --type=qna
+```
+
+**생성되는 API 엔드포인트 (게시판):**
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| GET | `/api/boards` | 게시판 목록 조회 |
+| GET | `/api/boards/:boardCode` | 게시판 상세 |
+| GET | `/api/boards/:boardCode/posts` | 게시글 목록 |
+| GET | `/api/posts/:id` | 게시글 상세 |
+| POST | `/api/posts` | 게시글 작성 |
+| PUT | `/api/posts/:id` | 게시글 수정 |
+| DELETE | `/api/posts/:id` | 게시글 삭제 |
+| POST | `/api/posts/:id/comments` | 댓글 작성 |
+| PUT | `/api/comments/:id` | 댓글 수정 |
+| DELETE | `/api/comments/:id` | 댓글 삭제 |
+| POST | `/api/posts/:id/like` | 좋아요/추천 |
+| POST | `/api/attachments/upload` | 파일 업로드 |
+
+**게시판 템플릿:**
+
+| 템플릿 | 설명 | 주요 기능 |
+|--------|------|----------|
+| `notice` | 공지사항 | 상단 고정, 관리자만 작성 |
+| `faq` | FAQ | 질문/답변 형식, 카테고리 분류 |
+| `free` | 자유게시판 | 기본 게시판, 댓글/좋아요 |
+| `qna` | Q&A | 질문/답변, 비밀글 지원 |
+| `gallery` | 갤러리 | 이미지 썸네일, 그리드 뷰 |
+| `review` | 리뷰 | 별점, 이미지 첨부 |
+
 ---
 
 ## 생성되는 파일 목록
@@ -189,6 +314,60 @@ Use menu-manager --utility=footer        # 푸터 유틸리티 (이용약관 등
 | `frontend/src/components/admin/menu/MenuManager.tsx` | 메뉴 관리 메인 |
 | `frontend/src/components/admin/menu/MenuTree.tsx` | 메뉴 트리 |
 | `frontend/src/components/admin/menu/MenuForm.tsx` | 메뉴 폼 |
+
+### 테넌트 관리 (Backend)
+
+| 파일 | 설명 |
+|------|------|
+| `middleware/node/api/tenants.js` | 테넌트 API |
+| `middleware/node/middleware/tenantMiddleware.js` | 테넌트 식별 미들웨어 |
+| `middleware/node/db/schema/tenant_schema.sql` | 테넌트 테이블 |
+
+### 테넌트 관리 (Frontend)
+
+| 파일 | 설명 |
+|------|------|
+| `frontend/src/types/tenant.ts` | 테넌트 타입 정의 |
+| `frontend/src/lib/tenantApi.ts` | 테넌트 API 클라이언트 |
+| `frontend/src/components/admin/TenantManagement.tsx` | 테넌트 관리 UI |
+
+### 카테고리 관리 (Backend)
+
+| 파일 | 설명 |
+|------|------|
+| `middleware/node/api/categories.js` | 카테고리 API |
+| `middleware/node/db/schema/category_schema.sql` | 카테고리 테이블 |
+
+### 카테고리 관리 (Frontend)
+
+| 파일 | 설명 |
+|------|------|
+| `frontend/src/types/category.ts` | 카테고리 타입 정의 |
+| `frontend/src/lib/categoryApi.ts` | 카테고리 API 클라이언트 |
+| `frontend/src/components/admin/CategoryManagement.tsx` | 카테고리 관리 UI |
+
+### 게시판 (Backend)
+
+| 파일 | 설명 |
+|------|------|
+| `middleware/node/api/boards.js` | 게시판 API |
+| `middleware/node/api/posts.js` | 게시글 API |
+| `middleware/node/api/comments.js` | 댓글 API |
+| `middleware/node/api/attachments.js` | 파일 첨부 API |
+| `middleware/node/db/schema/board_schema.sql` | 게시판/게시글/댓글 테이블 |
+
+### 게시판 (Frontend)
+
+| 파일 | 설명 |
+|------|------|
+| `frontend/src/types/board.ts` | 게시판 타입 정의 |
+| `frontend/src/types/post.ts` | 게시글 타입 정의 |
+| `frontend/src/lib/boardApi.ts` | 게시판 API 클라이언트 |
+| `frontend/src/components/board/BoardList.tsx` | 게시글 목록 |
+| `frontend/src/components/board/PostDetail.tsx` | 게시글 상세 |
+| `frontend/src/components/board/PostForm.tsx` | 게시글 작성/수정 |
+| `frontend/src/components/board/CommentList.tsx` | 댓글 목록 |
+| `frontend/src/components/admin/BoardManagement.tsx` | 게시판 관리 UI |
 
 ---
 
