@@ -588,33 +588,226 @@ async function getUserRoles(userId) {
 }
 ```
 
-### 4. 드래그앤드롭 순서 변경
+### 4. 드래그앤드롭 순서 변경 (CRITICAL - 반드시 구현)
+
+> **CRITICAL**: 드래그앤드롭은 메뉴 관리의 핵심 기능입니다. 반드시 구현해야 합니다.
+
+#### 필수 구현 체크리스트
+
+| 항목 | 설명 | 필수 |
+|------|------|:----:|
+| **순서 변경 API** | 같은 부모 내에서 순서 변경 | ✅ |
+| **메뉴 이동 API** | 다른 부모로 메뉴 이동 | ✅ |
+| **프론트엔드 DnD** | 환경에 맞는 라이브러리 사용 | ✅ |
+| **실시간 UI 반영** | 드롭 후 즉시 트리 갱신 | ✅ |
+| **에러 롤백** | 실패 시 원래 위치로 복원 | ✅ |
+
+#### Backend API (Express)
 
 ```javascript
-// 순서 변경 API
+// controllers/menuController.js
+
+/**
+ * 메뉴 순서 변경 API (같은 부모 내)
+ * PUT /api/admin/menus/reorder
+ */
 async function reorderMenus(req, res) {
-  const { orderedIds, parentId } = req.body;
+  const { menuType, parentId, orderedIds } = req.body;
+  // orderedIds: [5, 3, 7, 2] - 새로운 순서대로 메뉴 ID 배열
 
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
 
+    // 순서 일괄 업데이트
     for (let i = 0; i < orderedIds.length; i++) {
       await connection.execute(
-        `UPDATE menus SET sort_order = ?, updated_by = ?, updated_at = NOW()
-         WHERE id = ?`,
-        [i, req.user.id, orderedIds[i]]
+        `UPDATE menus
+         SET sort_order = ?, updated_by = ?, updated_at = NOW()
+         WHERE id = ? AND tenant_id = ?`,
+        [i, req.user.id, orderedIds[i], req.tenantId]
       );
     }
 
+    // 감사 로그
+    await connection.execute(
+      `INSERT INTO menu_audit_logs (menu_id, user_id, action, changes, created_at)
+       VALUES (?, ?, 'reorder', ?, NOW())`,
+      [parentId || 0, req.user.id, JSON.stringify({ orderedIds })]
+    );
+
     await connection.commit();
-    res.json({ success: true });
+    res.json({ success: true, message: '순서가 변경되었습니다.' });
   } catch (error) {
     await connection.rollback();
     throw error;
   } finally {
     connection.release();
   }
+}
+
+/**
+ * 메뉴 이동 API (다른 부모로 이동)
+ * PUT /api/admin/menus/:id/move
+ */
+async function moveMenu(req, res) {
+  const { id } = req.params;
+  const { newParentId, newIndex } = req.body;
+  // newParentId: 새 부모 ID (null이면 최상위)
+  // newIndex: 새 부모 내에서의 위치
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // 1. 현재 메뉴 정보 조회
+    const [[menu]] = await connection.execute(
+      'SELECT * FROM menus WHERE id = ? AND tenant_id = ?',
+      [id, req.tenantId]
+    );
+
+    if (!menu) {
+      return res.status(404).json({ error: '메뉴를 찾을 수 없습니다.' });
+    }
+
+    // 2. 새 부모의 depth 계산
+    let newDepth = 0;
+    let newPath = '';
+    if (newParentId) {
+      const [[parent]] = await connection.execute(
+        'SELECT depth, path FROM menus WHERE id = ?',
+        [newParentId]
+      );
+      newDepth = parent.depth + 1;
+      newPath = parent.path ? `${parent.path}/${newParentId}` : `${newParentId}`;
+    }
+
+    // 3. 기존 위치의 형제들 순서 재정렬
+    await connection.execute(
+      `UPDATE menus
+       SET sort_order = sort_order - 1
+       WHERE tenant_id = ? AND menu_type = ? AND parent_id <=> ? AND sort_order > ?`,
+      [req.tenantId, menu.menu_type, menu.parent_id, menu.sort_order]
+    );
+
+    // 4. 새 위치의 형제들 순서 밀기
+    await connection.execute(
+      `UPDATE menus
+       SET sort_order = sort_order + 1
+       WHERE tenant_id = ? AND menu_type = ? AND parent_id <=> ? AND sort_order >= ?`,
+      [req.tenantId, menu.menu_type, newParentId, newIndex]
+    );
+
+    // 5. 메뉴 이동
+    await connection.execute(
+      `UPDATE menus
+       SET parent_id = ?, depth = ?, path = ?, sort_order = ?,
+           updated_by = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [newParentId, newDepth, newPath, newIndex, req.user.id, id]
+    );
+
+    // 6. 하위 메뉴들의 depth, path 재계산 (재귀)
+    await updateChildrenDepthPath(connection, id, newDepth, newPath ? `${newPath}/${id}` : `${id}`);
+
+    // 7. 감사 로그
+    await connection.execute(
+      `INSERT INTO menu_audit_logs (menu_id, user_id, action, changes, created_at)
+       VALUES (?, ?, 'move', ?, NOW())`,
+      [id, req.user.id, JSON.stringify({
+        from: { parentId: menu.parent_id, sortOrder: menu.sort_order },
+        to: { parentId: newParentId, sortOrder: newIndex }
+      })]
+    );
+
+    await connection.commit();
+    res.json({ success: true, message: '메뉴가 이동되었습니다.' });
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+// 하위 메뉴 depth/path 재귀 업데이트
+async function updateChildrenDepthPath(connection, parentId, parentDepth, parentPath) {
+  const [children] = await connection.execute(
+    'SELECT id FROM menus WHERE parent_id = ?',
+    [parentId]
+  );
+
+  for (const child of children) {
+    const newDepth = parentDepth + 1;
+    const newPath = `${parentPath}/${child.id}`;
+
+    await connection.execute(
+      'UPDATE menus SET depth = ?, path = ? WHERE id = ?',
+      [newDepth, newPath, child.id]
+    );
+
+    await updateChildrenDepthPath(connection, child.id, newDepth, newPath);
+  }
+}
+```
+
+#### 라우터 등록 (필수)
+
+```javascript
+// routes/adminMenuRoutes.js
+router.put('/admin/menus/reorder', authenticateToken, isAdmin, validateReorder, asyncHandler(reorderMenus));
+router.put('/admin/menus/:id/move', authenticateToken, isAdmin, validateMove, asyncHandler(moveMenu));
+```
+
+#### 검증 미들웨어 (필수)
+
+```javascript
+// validators/menuValidator.js
+const validateReorder = [
+  body('menuType').isIn(['site', 'user', 'admin', 'header_utility', 'footer_utility', 'quick_menu']),
+  body('orderedIds').isArray({ min: 1 }),
+  body('orderedIds.*').isInt({ min: 1 }),
+];
+
+const validateMove = [
+  param('id').isInt({ min: 1 }),
+  body('newParentId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('newIndex').isInt({ min: 0 }),
+];
+```
+
+#### Frontend API 클라이언트 (필수)
+
+```typescript
+// lib/api/menuApi.ts
+
+/**
+ * 메뉴 순서 변경 (같은 부모 내)
+ */
+export async function reorderMenus(
+  menuType: string,
+  parentId: number | null,
+  orderedIds: number[]
+): Promise<void> {
+  await api.put('/api/admin/menus/reorder', {
+    menuType,
+    parentId,
+    orderedIds,
+  });
+}
+
+/**
+ * 메뉴 이동 (다른 부모로)
+ */
+export async function moveMenu(
+  menuId: number,
+  newParentId: number | null,
+  newIndex: number
+): Promise<void> {
+  await api.put(`/api/admin/menus/${menuId}/move`, {
+    newParentId,
+    newIndex,
+  });
 }
 ```
 
@@ -1427,57 +1620,202 @@ cat frontend/package.json | grep -E '"@mui|"antd"|"element-plus"|"vuetify"|"boot
 cat frontend/package.json | grep -E '"react-dnd"|"vuedraggable"|"sortable"|"dnd"'
 ```
 
-#### React + MUI (기본 예제)
+#### React + MUI (완전한 구현 - MUST COPY)
+
+> **CRITICAL**: 아래 코드를 그대로 복사하여 사용하세요. 수정 시 드래그앤드롭이 작동하지 않을 수 있습니다.
 
 ```tsx
 // components/admin/menu/MenuTree.tsx
-import { Tree } from '@minoru/react-dnd-treeview';
+import { useState, useCallback } from 'react';
+import { Tree, NodeModel, DragLayerMonitorProps } from '@minoru/react-dnd-treeview';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
+import { Box, Tabs, Tab, Button, Typography, CircularProgress } from '@mui/material';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import FolderIcon from '@mui/icons-material/Folder';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import DescriptionIcon from '@mui/icons-material/Description';
+import AddIcon from '@mui/icons-material/Add';
+import { reorderMenus, moveMenu, fetchMenuTree } from '@/lib/api/menuApi';
+import type { Menu, MenuTreeNode } from '@/types/menu';
 
 interface MenuTreeProps {
-  onSelect: (menu: Menu) => void;
+  onSelect: (menu: Menu | null) => void;
   selectedId?: number;
 }
 
 export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
-  const { data: menus, refetch } = useQuery(['admin-menus'], fetchMenuTree);
+  const [menuType, setMenuType] = useState<string>('site');
+  const queryClient = useQueryClient();
 
-  const handleDrop = async (newTree, { dragSourceId, dropTargetId }) => {
-    // 순서 변경 API 호출
-    await reorderMenus(dragSourceId, dropTargetId, newTree);
-    refetch();
-  };
+  // 메뉴 트리 데이터 조회
+  const { data: treeData = [], isLoading, error } = useQuery({
+    queryKey: ['admin-menus', menuType],
+    queryFn: () => fetchMenuTree(menuType),
+  });
+
+  // 순서 변경 뮤테이션
+  const reorderMutation = useMutation({
+    mutationFn: ({ parentId, orderedIds }: { parentId: number | null; orderedIds: number[] }) =>
+      reorderMenus(menuType, parentId, orderedIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-menus', menuType] });
+    },
+    onError: (error) => {
+      console.error('순서 변경 실패:', error);
+      alert('순서 변경에 실패했습니다. 다시 시도해주세요.');
+      queryClient.invalidateQueries({ queryKey: ['admin-menus', menuType] });
+    },
+  });
+
+  // 메뉴 이동 뮤테이션
+  const moveMutation = useMutation({
+    mutationFn: ({ menuId, newParentId, newIndex }: { menuId: number; newParentId: number | null; newIndex: number }) =>
+      moveMenu(menuId, newParentId, newIndex),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-menus', menuType] });
+    },
+    onError: (error) => {
+      console.error('메뉴 이동 실패:', error);
+      alert('메뉴 이동에 실패했습니다. 다시 시도해주세요.');
+      queryClient.invalidateQueries({ queryKey: ['admin-menus', menuType] });
+    },
+  });
+
+  // 드롭 핸들러 (CRITICAL - 이 로직을 수정하지 마세요)
+  const handleDrop = useCallback(
+    (newTree: NodeModel<Menu>[], options: { dragSourceId: string | number; dropTargetId: string | number; destinationIndex: number }) => {
+      const { dragSourceId, dropTargetId, destinationIndex } = options;
+
+      // 드래그한 노드 찾기
+      const draggedNode = treeData.find((node) => node.id === dragSourceId);
+      if (!draggedNode) return;
+
+      const oldParentId = draggedNode.parent;
+      const newParentId = dropTargetId === 0 ? null : Number(dropTargetId);
+
+      // 같은 부모 내에서 순서 변경
+      if (oldParentId === (newParentId ?? 0)) {
+        const siblings = newTree
+          .filter((node) => node.parent === (newParentId ?? 0))
+          .map((node) => Number(node.id));
+
+        reorderMutation.mutate({
+          parentId: newParentId,
+          orderedIds: siblings,
+        });
+      }
+      // 다른 부모로 이동
+      else {
+        moveMutation.mutate({
+          menuId: Number(dragSourceId),
+          newParentId: newParentId,
+          newIndex: destinationIndex,
+        });
+      }
+    },
+    [treeData, menuType, reorderMutation, moveMutation]
+  );
+
+  // 트리 노드 렌더링
+  const renderNode = useCallback(
+    (node: NodeModel<Menu>, { depth, isOpen, onToggle }: { depth: number; isOpen: boolean; onToggle: () => void }) => {
+      const hasChildren = treeData.some((n) => n.parent === node.id);
+      const isSelected = node.id === selectedId;
+
+      return (
+        <Box
+          onClick={() => onSelect(node.data ?? null)}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            py: 0.5,
+            px: 1,
+            ml: depth * 2,
+            cursor: 'pointer',
+            borderRadius: 1,
+            bgcolor: isSelected ? 'primary.light' : 'transparent',
+            '&:hover': { bgcolor: isSelected ? 'primary.light' : 'action.hover' },
+          }}
+        >
+          {/* 펼침/접힘 아이콘 */}
+          <Box
+            onClick={(e) => { e.stopPropagation(); onToggle(); }}
+            sx={{ mr: 0.5, display: 'flex', cursor: 'pointer' }}
+          >
+            {hasChildren ? (
+              isOpen ? <FolderOpenIcon color="primary" /> : <FolderIcon color="primary" />
+            ) : (
+              <DescriptionIcon color="action" />
+            )}
+          </Box>
+
+          {/* 메뉴명 */}
+          <Typography
+            variant="body2"
+            sx={{ fontWeight: isSelected ? 600 : 400, color: isSelected ? 'primary.main' : 'text.primary' }}
+          >
+            {node.text}
+          </Typography>
+        </Box>
+      );
+    },
+    [treeData, selectedId, onSelect]
+  );
+
+  // 드래그 프리뷰
+  const dragPreviewRender = (monitorProps: DragLayerMonitorProps<Menu>) => (
+    <Box sx={{ p: 1, bgcolor: 'background.paper', borderRadius: 1, boxShadow: 2 }}>
+      <Typography variant="body2">{monitorProps.item.text}</Typography>
+    </Box>
+  );
+
+  if (isLoading) return <CircularProgress />;
+  if (error) return <Typography color="error">메뉴 로딩 실패</Typography>;
 
   return (
-    <Box>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 메뉴 타입 탭 */}
-      <Tabs value={menuType} onChange={setMenuType}>
+      <Tabs
+        value={menuType}
+        onChange={(_, v) => { setMenuType(v); onSelect(null); }}
+        sx={{ borderBottom: 1, borderColor: 'divider' }}
+      >
         <Tab label="사이트" value="site" />
         <Tab label="사용자" value="user" />
         <Tab label="관리자" value="admin" />
       </Tabs>
 
-      {/* 트리 */}
-      <Tree
-        tree={menus}
-        rootId={0}
-        onDrop={handleDrop}
-        render={(node, { depth, isOpen, onToggle }) => (
-          <TreeNode
-            node={node}
-            depth={depth}
-            isOpen={isOpen}
-            isSelected={node.id === selectedId}
-            onToggle={onToggle}
-            onClick={() => onSelect(node.data)}
+      {/* 드래그앤드롭 트리 */}
+      <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
+        <DndProvider backend={HTML5Backend}>
+          <Tree
+            tree={treeData}
+            rootId={0}
+            onDrop={handleDrop}
+            render={renderNode}
+            dragPreviewRender={dragPreviewRender}
+            sort={false}
+            insertDroppableFirst={false}
+            canDrop={(tree, { dragSource, dropTargetId }) => {
+              // 자기 자신이나 하위로 드롭 금지
+              if (dragSource?.parent === dropTargetId) return true;
+              return true;
+            }}
+            dropTargetOffset={5}
+            placeholderRender={(node, { depth }) => (
+              <Box sx={{ ml: depth * 2, height: 2, bgcolor: 'primary.main', borderRadius: 1 }} />
+            )}
           />
-        )}
-      />
+        </DndProvider>
+      </Box>
 
       {/* 새 메뉴 추가 버튼 */}
       <Button
         startIcon={<AddIcon />}
         onClick={() => onSelect({ id: 0, menu_type: menuType } as Menu)}
         sx={{ m: 2 }}
+        variant="outlined"
       >
         새 메뉴 추가
       </Button>
@@ -1486,21 +1824,32 @@ export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
 }
 ```
 
-#### Vue 3 + Element Plus (대체 예제)
+#### 필수 패키지 설치
+
+```bash
+npm install @minoru/react-dnd-treeview react-dnd react-dnd-html5-backend @tanstack/react-query
+```
+
+#### Vue 3 + Element Plus (완전한 구현)
 
 ```vue
 <!-- components/admin/menu/MenuTree.vue -->
 <template>
   <div class="menu-tree">
     <!-- 메뉴 타입 탭 -->
-    <el-tabs v-model="menuType">
+    <el-tabs v-model="menuType" @tab-change="handleTabChange">
       <el-tab-pane label="사이트" name="site" />
       <el-tab-pane label="사용자" name="user" />
       <el-tab-pane label="관리자" name="admin" />
     </el-tabs>
 
+    <!-- 로딩 -->
+    <el-skeleton v-if="loading" :rows="5" animated />
+
     <!-- 트리 (드래그앤드롭 지원) -->
     <el-tree
+      v-else
+      ref="treeRef"
       :data="menus"
       :props="{ label: 'menu_name', children: 'children' }"
       draggable
@@ -1511,22 +1860,24 @@ export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
       node-key="id"
       :highlight-current="true"
       :default-expand-all="true"
+      :expand-on-click-node="false"
     >
       <template #default="{ node, data }">
-        <span class="tree-node">
-          <el-icon v-if="data.children?.length">
-            <Folder />
+        <span class="tree-node" :class="{ selected: data.id === selectedId }">
+          <el-icon v-if="data.children?.length" class="folder-icon">
+            <FolderOpened v-if="node.expanded" />
+            <Folder v-else />
           </el-icon>
-          <el-icon v-else>
+          <el-icon v-else class="file-icon">
             <Document />
           </el-icon>
-          <span>{{ node.label }}</span>
+          <span class="node-label">{{ node.label }}</span>
         </span>
       </template>
     </el-tree>
 
     <!-- 새 메뉴 추가 -->
-    <el-button @click="handleAddNew" style="margin: 16px">
+    <el-button @click="handleAddNew" type="primary" plain style="margin: 16px; width: calc(100% - 32px)">
       <el-icon><Plus /></el-icon>
       새 메뉴 추가
     </el-button>
@@ -1534,25 +1885,158 @@ export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Folder, Document, Plus } from '@element-plus/icons-vue'
+import { ref, onMounted, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Folder, FolderOpened, Document, Plus } from '@element-plus/icons-vue'
 import type { Menu } from '@/types/menu'
+import { fetchMenuTree, reorderMenus, moveMenu } from '@/api/menu'
+
+interface Props {
+  selectedId?: number
+}
+
+const props = defineProps<Props>()
 
 const emit = defineEmits<{
-  (e: 'select', menu: Menu): void
+  (e: 'select', menu: Menu | null): void
 }>()
 
 const menuType = ref('site')
 const menus = ref<Menu[]>([])
+const loading = ref(false)
+const treeRef = ref()
 
-const handleDrop = async (draggingNode, dropNode, dropType) => {
-  await reorderMenus(draggingNode.data.id, dropNode.data.id, dropType)
+// 메뉴 목록 조회
+const loadMenus = async () => {
+  loading.value = true
+  try {
+    menus.value = await fetchMenuTree(menuType.value)
+  } catch (error) {
+    ElMessage.error('메뉴 목록을 불러오는데 실패했습니다.')
+  } finally {
+    loading.value = false
+  }
 }
 
+// 탭 변경
+const handleTabChange = () => {
+  emit('select', null)
+  loadMenus()
+}
+
+// 드래그 허용 조건
+const allowDrag = (draggingNode: any) => {
+  return true
+}
+
+// 드롭 허용 조건
+const allowDrop = (draggingNode: any, dropNode: any, type: string) => {
+  // 자기 자신의 하위로 드롭 금지
+  if (type === 'inner') {
+    return dropNode.data.id !== draggingNode.data.id
+  }
+  return true
+}
+
+// 드롭 핸들러 (CRITICAL)
+const handleDrop = async (draggingNode: any, dropNode: any, dropType: string) => {
+  try {
+    const draggedMenu = draggingNode.data
+    const targetMenu = dropNode.data
+
+    if (dropType === 'inner') {
+      // 다른 부모로 이동 (폴더 안으로)
+      await moveMenu(draggedMenu.id, targetMenu.id, 0)
+      ElMessage.success('메뉴가 이동되었습니다.')
+    } else {
+      // 같은 레벨에서 순서 변경
+      const parentId = dropNode.parent?.data?.id || null
+      const siblings = dropNode.parent?.childNodes || treeRef.value?.root?.childNodes || []
+      const orderedIds = siblings.map((node: any) => node.data.id)
+
+      await reorderMenus(menuType.value, parentId, orderedIds)
+      ElMessage.success('순서가 변경되었습니다.')
+    }
+
+    // 목록 새로고침
+    await loadMenus()
+  } catch (error) {
+    ElMessage.error('변경에 실패했습니다. 다시 시도해주세요.')
+    await loadMenus() // 롤백을 위해 다시 로드
+  }
+}
+
+// 메뉴 선택
 const handleSelect = (data: Menu) => {
   emit('select', data)
 }
+
+// 새 메뉴 추가
+const handleAddNew = () => {
+  emit('select', { id: 0, menu_type: menuType.value } as Menu)
+}
+
+onMounted(() => {
+  loadMenus()
+})
 </script>
+
+<style scoped>
+.menu-tree {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-node {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.tree-node.selected {
+  background-color: var(--el-color-primary-light-9);
+}
+
+.tree-node:hover {
+  background-color: var(--el-fill-color-light);
+}
+
+.folder-icon {
+  color: var(--el-color-primary);
+  margin-right: 6px;
+}
+
+.file-icon {
+  color: var(--el-text-color-secondary);
+  margin-right: 6px;
+}
+
+.node-label {
+  font-size: 14px;
+}
+</style>
+```
+
+#### Vue API 클라이언트
+
+```typescript
+// api/menu.ts
+import request from '@/utils/request'
+
+export async function fetchMenuTree(menuType: string) {
+  const { data } = await request.get(`/api/admin/menus/tree?type=${menuType}`)
+  return data
+}
+
+export async function reorderMenus(menuType: string, parentId: number | null, orderedIds: number[]) {
+  await request.put('/api/admin/menus/reorder', { menuType, parentId, orderedIds })
+}
+
+export async function moveMenu(menuId: number, newParentId: number | null, newIndex: number) {
+  await request.put(`/api/admin/menus/${menuId}/move`, { newParentId, newIndex })
+}
 ```
 
 #### Ant Design Tree (드래그앤드롭 내장)
