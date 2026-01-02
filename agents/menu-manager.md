@@ -748,36 +748,203 @@ export default function HeaderUtility() {
 
 ## 기본 메뉴 데이터
 
+### 사이트 메뉴 (GNB)
+
+```sql
+-- 1차 메뉴 (depth: 0)
+INSERT INTO menus (menu_type, menu_name, menu_code, icon, link_type, link_url, permission_type, sort_order, created_by) VALUES
+('site', '회사소개', 'about', 'mdi-domain', 'none', NULL, 'public', 1, 'system'),
+('site', '서비스', 'service', 'mdi-briefcase', 'none', NULL, 'public', 2, 'system'),
+('site', '커뮤니티', 'community', 'mdi-forum', 'none', NULL, 'public', 3, 'system'),
+('site', '고객센터', 'support', 'mdi-headset', 'none', NULL, 'public', 4, 'system');
+
+-- 2차 메뉴 (depth: 1) - 회사소개 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, 'CEO 인사말', 'about_ceo', 'url', '/about/ceo', 1, 1, 'system' FROM menus WHERE menu_code = 'about' AND menu_type = 'site';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, '회사연혁', 'about_history', 'url', '/about/history', 1, 2, 'system' FROM menus WHERE menu_code = 'about' AND menu_type = 'site';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, '조직도', 'about_organization', 'url', '/about/organization', 1, 3, 'system' FROM menus WHERE menu_code = 'about' AND menu_type = 'site';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, '오시는 길', 'about_location', 'url', '/about/location', 1, 4, 'system' FROM menus WHERE menu_code = 'about' AND menu_type = 'site';
+
+-- 2차 메뉴 - 서비스 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, '서비스 소개', 'service_intro', 'url', '/service/intro', 1, 1, 'system' FROM menus WHERE menu_code = 'service' AND menu_type = 'site';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, '요금안내', 'service_pricing', 'url', '/service/pricing', 1, 2, 'system' FROM menus WHERE menu_code = 'service' AND menu_type = 'site';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, '이용방법', 'service_guide', 'url', '/service/guide', 1, 3, 'system' FROM menus WHERE menu_code = 'service' AND menu_type = 'site';
+
+-- 2차 메뉴 - 커뮤니티 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, '공지사항', 'community_notice', 'url', '/community/notice', 1, 1, 'system' FROM menus WHERE menu_code = 'community' AND menu_type = 'site';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, '자유게시판', 'community_free', 'url', '/community/free', 1, 2, 'system' FROM menus WHERE menu_code = 'community' AND menu_type = 'site';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'site', id, '이용후기', 'community_review', 'url', '/community/review', 1, 'member', 3, 'system' FROM menus WHERE menu_code = 'community' AND menu_type = 'site';
+
+-- 2차 메뉴 - 고객센터 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, 'FAQ', 'support_faq', 'url', '/support/faq', 1, 1, 'system' FROM menus WHERE menu_code = 'support' AND menu_type = 'site';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'site', id, '1:1 문의', 'support_inquiry', 'url', '/support/inquiry', 1, 'member', 2, 'system' FROM menus WHERE menu_code = 'support' AND menu_type = 'site';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, sort_order, created_by)
+SELECT 'site', id, '자료실', 'support_download', 'url', '/support/download', 1, 3, 'system' FROM menus WHERE menu_code = 'support' AND menu_type = 'site';
+```
+
+### 사용자 메뉴 (마이페이지)
+
+```sql
+-- 1차 메뉴 (depth: 0)
+INSERT INTO menus (menu_type, menu_name, menu_code, icon, link_type, link_url, permission_type, sort_order, created_by) VALUES
+('user', '마이페이지', 'mypage', 'mdi-account-circle', 'none', NULL, 'member', 1, 'system'),
+('user', '주문/배송', 'orders', 'mdi-package-variant', 'none', NULL, 'member', 2, 'system'),
+('user', '활동내역', 'activity', 'mdi-history', 'none', NULL, 'member', 3, 'system'),
+('user', '고객지원', 'my_support', 'mdi-help-circle', 'none', NULL, 'member', 4, 'system');
+
+-- 2차 메뉴 - 마이페이지 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '회원정보 수정', 'mypage_profile', 'url', '/mypage/profile', 1, 'member', 1, 'system' FROM menus WHERE menu_code = 'mypage' AND menu_type = 'user';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '비밀번호 변경', 'mypage_password', 'url', '/mypage/password', 1, 'member', 2, 'system' FROM menus WHERE menu_code = 'mypage' AND menu_type = 'user';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '회원등급/혜택', 'mypage_grade', 'url', '/mypage/grade', 1, 'member', 3, 'system' FROM menus WHERE menu_code = 'mypage' AND menu_type = 'user';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '회원탈퇴', 'mypage_withdraw', 'url', '/mypage/withdraw', 1, 'member', 4, 'system' FROM menus WHERE menu_code = 'mypage' AND menu_type = 'user';
+
+-- 2차 메뉴 - 주문/배송 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '주문내역', 'orders_list', 'url', '/mypage/orders', 1, 'member', 1, 'system' FROM menus WHERE menu_code = 'orders' AND menu_type = 'user';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '배송조회', 'orders_delivery', 'url', '/mypage/delivery', 1, 'member', 2, 'system' FROM menus WHERE menu_code = 'orders' AND menu_type = 'user';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '취소/반품/교환', 'orders_cancel', 'url', '/mypage/cancel', 1, 'member', 3, 'system' FROM menus WHERE menu_code = 'orders' AND menu_type = 'user';
+
+-- 2차 메뉴 - 활동내역 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '찜목록', 'activity_wishlist', 'url', '/mypage/wishlist', 1, 'member', 1, 'system' FROM menus WHERE menu_code = 'activity' AND menu_type = 'user';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '최근 본 상품', 'activity_recent', 'url', '/mypage/recent', 1, 'member', 2, 'system' FROM menus WHERE menu_code = 'activity' AND menu_type = 'user';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '내가 쓴 글', 'activity_posts', 'url', '/mypage/posts', 1, 'member', 3, 'system' FROM menus WHERE menu_code = 'activity' AND menu_type = 'user';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '포인트/쿠폰', 'activity_point', 'url', '/mypage/point', 1, 'member', 4, 'system' FROM menus WHERE menu_code = 'activity' AND menu_type = 'user';
+
+-- 2차 메뉴 - 고객지원 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '1:1 문의내역', 'my_support_inquiry', 'url', '/mypage/inquiry', 1, 'member', 1, 'system' FROM menus WHERE menu_code = 'my_support' AND menu_type = 'user';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'user', id, '상품 Q&A', 'my_support_qna', 'url', '/mypage/qna', 1, 'member', 2, 'system' FROM menus WHERE menu_code = 'my_support' AND menu_type = 'user';
+```
+
 ### 헤더 유틸리티
 
 ```sql
-INSERT INTO menus (menu_type, menu_name, menu_code, link_type, link_url, show_condition, sort_order, created_by) VALUES
-('header_utility', '로그인', 'login', 'url', '/login', 'logged_out', 1, 'system'),
-('header_utility', '회원가입', 'register', 'url', '/register', 'logged_out', 2, 'system'),
-('header_utility', '마이페이지', 'mypage', 'url', '/mypage', 'logged_in', 3, 'system'),
-('header_utility', '장바구니', 'cart', 'url', '/cart', 'logged_in', 4, 'system'),
-('header_utility', '로그아웃', 'logout', 'url', '/logout', 'logged_in', 5, 'system');
+INSERT INTO menus (menu_type, menu_name, menu_code, icon, link_type, link_url, show_condition, sort_order, created_by) VALUES
+('header_utility', '로그인', 'login', 'mdi-login', 'url', '/login', 'logged_out', 1, 'system'),
+('header_utility', '회원가입', 'register', 'mdi-account-plus', 'url', '/register', 'logged_out', 2, 'system'),
+('header_utility', '마이페이지', 'header_mypage', 'mdi-account', 'url', '/mypage', 'logged_in', 3, 'system'),
+('header_utility', '장바구니', 'cart', 'mdi-cart', 'url', '/cart', 'logged_in', 4, 'system'),
+('header_utility', '주문조회', 'order_check', 'mdi-truck-delivery', 'url', '/order/check', 'always', 5, 'system'),
+('header_utility', '고객센터', 'header_support', 'mdi-headset', 'url', '/support', 'always', 6, 'system'),
+('header_utility', '로그아웃', 'logout', 'mdi-logout', 'url', '/logout', 'logged_in', 7, 'system');
 ```
 
 ### 푸터 유틸리티
 
 ```sql
-INSERT INTO menus (menu_type, menu_name, menu_code, link_type, link_url, sort_order, created_by) VALUES
-('footer_utility', '이용약관', 'terms', 'url', '/terms', 1, 'system'),
-('footer_utility', '개인정보처리방침', 'privacy', 'url', '/privacy', 2, 'system'),
-('footer_utility', '사이트맵', 'sitemap', 'url', '/sitemap', 3, 'system'),
-('footer_utility', '관련사이트', 'related_sites', 'none', NULL, 4, 'system');
+INSERT INTO menus (menu_type, menu_name, menu_code, link_type, link_url, sort_order, css_class, created_by) VALUES
+('footer_utility', '회사소개', 'footer_about', 'url', '/about', 1, NULL, 'system'),
+('footer_utility', '이용약관', 'terms', 'url', '/terms', 2, NULL, 'system'),
+('footer_utility', '개인정보처리방침', 'privacy', 'url', '/privacy', 3, 'bold', 'system'),
+('footer_utility', '이메일무단수집거부', 'email_policy', 'url', '/email-policy', 4, NULL, 'system'),
+('footer_utility', '사이트맵', 'sitemap', 'url', '/sitemap', 5, NULL, 'system'),
+('footer_utility', '관련사이트', 'related_sites', 'none', NULL, 6, NULL, 'system');
+
+-- 관련 사이트 데이터
+INSERT INTO related_sites (menu_id, site_name, site_url, sort_order, is_new_window, created_by)
+SELECT id, '네이버', 'https://www.naver.com', 1, TRUE, 'system' FROM menus WHERE menu_code = 'related_sites' AND menu_type = 'footer_utility';
+INSERT INTO related_sites (menu_id, site_name, site_url, sort_order, is_new_window, created_by)
+SELECT id, '다음', 'https://www.daum.net', 2, TRUE, 'system' FROM menus WHERE menu_code = 'related_sites' AND menu_type = 'footer_utility';
+INSERT INTO related_sites (menu_id, site_name, site_url, sort_order, is_new_window, created_by)
+SELECT id, '구글', 'https://www.google.com', 3, TRUE, 'system' FROM menus WHERE menu_code = 'related_sites' AND menu_type = 'footer_utility';
+INSERT INTO related_sites (menu_id, site_name, site_url, sort_order, is_new_window, created_by)
+SELECT id, '정부24', 'https://www.gov.kr', 4, TRUE, 'system' FROM menus WHERE menu_code = 'related_sites' AND menu_type = 'footer_utility';
 ```
 
 ### 관리자 메뉴
 
 ```sql
+-- 1차 메뉴 (depth: 0)
 INSERT INTO menus (menu_type, menu_name, menu_code, icon, link_type, link_url, permission_type, sort_order, created_by) VALUES
 ('admin', '대시보드', 'dashboard', 'mdi-view-dashboard', 'url', '/admin', 'admin', 1, 'system'),
-('admin', '사용자관리', 'users', 'mdi-account-group', 'none', NULL, 'admin', 2, 'system'),
-('admin', '메뉴관리', 'menus', 'mdi-menu', 'url', '/admin/menus', 'admin', 3, 'system'),
-('admin', '그룹관리', 'groups', 'mdi-account-multiple', 'url', '/admin/groups', 'admin', 4, 'system'),
-('admin', '시스템설정', 'settings', 'mdi-cog', 'url', '/admin/settings', 'admin', 5, 'system');
+('admin', '회원관리', 'admin_users', 'mdi-account-group', 'none', NULL, 'admin', 2, 'system'),
+('admin', '컨텐츠관리', 'admin_contents', 'mdi-file-document-multiple', 'none', NULL, 'admin', 3, 'system'),
+('admin', '주문관리', 'admin_orders', 'mdi-cart', 'none', NULL, 'admin', 4, 'system'),
+('admin', '통계/리포트', 'admin_stats', 'mdi-chart-bar', 'none', NULL, 'admin', 5, 'system'),
+('admin', '시스템설정', 'admin_settings', 'mdi-cog', 'none', NULL, 'admin', 6, 'system');
+
+-- 2차 메뉴 - 회원관리 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '회원목록', 'admin_users_list', 'mdi-account-multiple', 'url', '/admin/users', 1, 'admin', 1, 'system' FROM menus WHERE menu_code = 'admin_users' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '회원등급관리', 'admin_users_grade', 'mdi-medal', 'url', '/admin/users/grade', 1, 'admin', 2, 'system' FROM menus WHERE menu_code = 'admin_users' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '그룹관리', 'admin_users_groups', 'mdi-account-group', 'url', '/admin/groups', 1, 'admin', 3, 'system' FROM menus WHERE menu_code = 'admin_users' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '역할관리', 'admin_users_roles', 'mdi-shield-account', 'url', '/admin/roles', 1, 'admin', 4, 'system' FROM menus WHERE menu_code = 'admin_users' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '탈퇴회원', 'admin_users_withdrawn', 'mdi-account-off', 'url', '/admin/users/withdrawn', 1, 'admin', 5, 'system' FROM menus WHERE menu_code = 'admin_users' AND menu_type = 'admin';
+
+-- 2차 메뉴 - 컨텐츠관리 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '메뉴관리', 'admin_menus', 'mdi-menu', 'url', '/admin/menus', 1, 'admin', 1, 'system' FROM menus WHERE menu_code = 'admin_contents' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '게시판관리', 'admin_boards', 'mdi-view-list', 'url', '/admin/boards', 1, 'admin', 2, 'system' FROM menus WHERE menu_code = 'admin_contents' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '배너관리', 'admin_banners', 'mdi-image', 'url', '/admin/banners', 1, 'admin', 3, 'system' FROM menus WHERE menu_code = 'admin_contents' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '팝업관리', 'admin_popups', 'mdi-window-maximize', 'url', '/admin/popups', 1, 'admin', 4, 'system' FROM menus WHERE menu_code = 'admin_contents' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '약관관리', 'admin_terms', 'mdi-file-document', 'url', '/admin/terms', 1, 'admin', 5, 'system' FROM menus WHERE menu_code = 'admin_contents' AND menu_type = 'admin';
+
+-- 2차 메뉴 - 주문관리 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '주문목록', 'admin_orders_list', 'mdi-clipboard-list', 'url', '/admin/orders', 1, 'admin', 1, 'system' FROM menus WHERE menu_code = 'admin_orders' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '배송관리', 'admin_orders_delivery', 'mdi-truck', 'url', '/admin/orders/delivery', 1, 'admin', 2, 'system' FROM menus WHERE menu_code = 'admin_orders' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '취소/반품/교환', 'admin_orders_cancel', 'mdi-undo', 'url', '/admin/orders/cancel', 1, 'admin', 3, 'system' FROM menus WHERE menu_code = 'admin_orders' AND menu_type = 'admin';
+
+-- 2차 메뉴 - 통계/리포트 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '방문자 통계', 'admin_stats_visitor', 'mdi-account-clock', 'url', '/admin/stats/visitor', 1, 'admin', 1, 'system' FROM menus WHERE menu_code = 'admin_stats' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '매출 통계', 'admin_stats_sales', 'mdi-chart-line', 'url', '/admin/stats/sales', 1, 'admin', 2, 'system' FROM menus WHERE menu_code = 'admin_stats' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '회원 통계', 'admin_stats_member', 'mdi-chart-pie', 'url', '/admin/stats/member', 1, 'admin', 3, 'system' FROM menus WHERE menu_code = 'admin_stats' AND menu_type = 'admin';
+
+-- 2차 메뉴 - 시스템설정 하위
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '기본설정', 'admin_settings_basic', 'mdi-cog', 'url', '/admin/settings/basic', 1, 'admin', 1, 'system' FROM menus WHERE menu_code = 'admin_settings' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '관리자 계정', 'admin_settings_admins', 'mdi-account-key', 'url', '/admin/settings/admins', 1, 'admin', 2, 'system' FROM menus WHERE menu_code = 'admin_settings' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '로그관리', 'admin_settings_logs', 'mdi-text-box-search', 'url', '/admin/settings/logs', 1, 'admin', 3, 'system' FROM menus WHERE menu_code = 'admin_settings' AND menu_type = 'admin';
+INSERT INTO menus (menu_type, parent_id, menu_name, menu_code, icon, link_type, link_url, depth, permission_type, sort_order, created_by)
+SELECT 'admin', id, '백업/복원', 'admin_settings_backup', 'mdi-backup-restore', 'url', '/admin/settings/backup', 1, 'admin', 4, 'system' FROM menus WHERE menu_code = 'admin_settings' AND menu_type = 'admin';
+```
+
+### 퀵메뉴 (플로팅)
+
+```sql
+INSERT INTO menus (menu_type, menu_name, menu_code, icon, link_type, link_url, show_condition, sort_order, created_by) VALUES
+('quick_menu', '최근 본 상품', 'quick_recent', 'mdi-history', 'url', '/mypage/recent', 'logged_in', 1, 'system'),
+('quick_menu', '장바구니', 'quick_cart', 'mdi-cart', 'url', '/cart', 'logged_in', 2, 'system'),
+('quick_menu', '찜목록', 'quick_wishlist', 'mdi-heart', 'url', '/mypage/wishlist', 'logged_in', 3, 'system'),
+('quick_menu', '1:1 문의', 'quick_inquiry', 'mdi-message-text', 'url', '/support/inquiry', 'always', 4, 'system'),
+('quick_menu', 'TOP', 'quick_top', 'mdi-chevron-up', 'url', '#top', 'always', 5, 'system');
 ```
 
 ---
