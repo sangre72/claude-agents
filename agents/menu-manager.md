@@ -1971,26 +1971,46 @@ export default function HeaderUtility() {
 
 ```tsx
 // pages/admin/menus/index.tsx
+// CRITICAL: isAddMode 상태를 반드시 사용해야 함
 export default function MenuManagementPage() {
   const [selectedMenu, setSelectedMenu] = useState<Menu | null>(null);
+  const [isAddMode, setIsAddMode] = useState(false);  // 추가 모드 상태
+  const [currentMenuType, setCurrentMenuType] = useState('site');
+
+  // 메뉴 선택/추가 핸들러
+  const handleSelect = (menu: Menu | null, isNewMenu = false) => {
+    if (isNewMenu) {
+      setSelectedMenu(null);
+      setIsAddMode(true);
+      if (menu?.menu_type) setCurrentMenuType(menu.menu_type);
+    } else {
+      setSelectedMenu(menu);
+      setIsAddMode(false);
+    }
+  };
+
+  const showPanel = selectedMenu !== null || isAddMode;
 
   return (
     <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
       {/* 좌측: 트리 */}
       <Box sx={{ width: 280, borderRight: 1, borderColor: 'divider', overflow: 'auto' }}>
         <MenuTree
-          onSelect={setSelectedMenu}
+          onSelect={handleSelect}
+          onMenuTypeChange={setCurrentMenuType}
           selectedId={selectedMenu?.id}
         />
       </Box>
 
       {/* 우측: 상세 패널 */}
       <Box sx={{ flex: 1, p: 3, overflow: 'auto' }}>
-        {selectedMenu ? (
+        {showPanel ? (
           <MenuDetailPanel
             menu={selectedMenu}
-            onSave={handleSave}
-            onDelete={handleDelete}
+            isAddMode={isAddMode}           // CRITICAL: 추가 모드 전달
+            defaultMenuType={currentMenuType}
+            onSuccess={() => { setSelectedMenu(null); setIsAddMode(false); }}
+            onCancel={() => { setSelectedMenu(null); setIsAddMode(false); }}
           />
         ) : (
           <EmptyState message="좌측에서 메뉴를 선택하세요" />
@@ -2050,11 +2070,12 @@ import { reorderMenus, moveMenu, fetchMenuTree } from '@/lib/api/menuApi';
 import type { Menu, MenuTreeNode } from '@/types/menu';
 
 interface MenuTreeProps {
-  onSelect: (menu: Menu | null) => void;
+  onSelect: (menu: Menu | null, isNewMenu?: boolean) => void;  // CRITICAL: isNewMenu 파라미터 추가
+  onMenuTypeChange?: (menuType: string) => void;  // 메뉴 타입 변경 콜백
   selectedId?: number;
 }
 
-export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
+export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreeProps) {
   const [menuType, setMenuType] = useState<string>('site');
   const queryClient = useQueryClient();
 
@@ -2135,7 +2156,7 @@ export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
 
       return (
         <Box
-          onClick={() => onSelect(node.data ?? null)}
+          onClick={() => onSelect(node.data ?? null, false)}  // 수정 모드
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -2188,7 +2209,11 @@ export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
       {/* 메뉴 타입 탭 */}
       <Tabs
         value={menuType}
-        onChange={(_, v) => { setMenuType(v); onSelect(null); }}
+        onChange={(_, v) => {
+          setMenuType(v);
+          onSelect(null, false);         // 메뉴 선택 해제
+          onMenuTypeChange?.(v);          // 상위 컴포넌트에 메뉴 타입 알림
+        }}
         sx={{ borderBottom: 1, borderColor: 'divider' }}
       >
         <Tab label="사이트" value="site" />
@@ -2220,10 +2245,10 @@ export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
         </DndProvider>
       </Box>
 
-      {/* 새 메뉴 추가 버튼 */}
+      {/* 새 메뉴 추가 버튼 - CRITICAL: isNewMenu = true 전달 */}
       <Button
         startIcon={<AddIcon />}
-        onClick={() => onSelect({ id: 0, menu_type: menuType } as Menu)}
+        onClick={() => onSelect({ menu_type: menuType } as Menu, true)}
         sx={{ m: 2 }}
         variant="outlined"
       >
@@ -2308,7 +2333,8 @@ interface Props {
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
-  (e: 'select', menu: Menu | null): void
+  (e: 'select', menu: Menu | null, isNewMenu: boolean): void  // CRITICAL: isNewMenu 추가
+  (e: 'menu-type-change', menuType: string): void  // 메뉴 타입 변경 이벤트
 }>()
 
 const menuType = ref('site')
@@ -2330,7 +2356,8 @@ const loadMenus = async () => {
 
 // 탭 변경
 const handleTabChange = () => {
-  emit('select', null)
+  emit('select', null, false)  // 메뉴 선택 해제
+  emit('menu-type-change', menuType.value)  // 메뉴 타입 변경 알림
   loadMenus()
 }
 
@@ -2376,14 +2403,14 @@ const handleDrop = async (draggingNode: any, dropNode: any, dropType: string) =>
   }
 }
 
-// 메뉴 선택
+// 메뉴 선택 (수정 모드)
 const handleSelect = (data: Menu) => {
-  emit('select', data)
+  emit('select', data, false)  // isNewMenu = false
 }
 
-// 새 메뉴 추가
+// 새 메뉴 추가 - CRITICAL: isNewMenu = true 전달
 const handleAddNew = () => {
-  emit('select', { id: 0, menu_type: menuType.value } as Menu)
+  emit('select', { menu_type: menuType.value } as Menu, true)  // isNewMenu = true
 }
 
 onMounted(() => {
@@ -2507,21 +2534,50 @@ import { fetchUserGroups, fetchRoles } from '@/lib/api/commonApi';
 import type { Menu } from '@/types/menu';
 
 interface MenuDetailPanelProps {
-  menu: Menu;
+  menu: Menu | null;          // 선택된 메뉴 (null일 수 있음)
+  isAddMode: boolean;         // 새 메뉴 추가 모드 여부 (CRITICAL)
+  defaultMenuType?: string;   // 추가 모드에서 기본 메뉴 타입
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export function MenuDetailPanel({ menu, onSuccess, onCancel }: MenuDetailPanelProps) {
+// CRITICAL: isAddMode를 반드시 전달받아야 함
+// menu가 null이고 isAddMode가 true면 새 메뉴 추가 폼 표시
+// menu가 있고 isAddMode가 false면 메뉴 수정 폼 표시
+export function MenuDetailPanel({ menu, isAddMode, defaultMenuType = 'site', onSuccess, onCancel }: MenuDetailPanelProps) {
   const queryClient = useQueryClient();
-  const [formData, setFormData] = useState<Partial<Menu>>(menu);
+
+  // CRITICAL: isAddMode와 menu 상태에 따른 초기값 설정
+  const getInitialFormData = (): Partial<Menu> => {
+    if (isAddMode) {
+      // 새 메뉴 추가 모드: 빈 폼 데이터
+      return {
+        menu_type: defaultMenuType,
+        parent_id: null,
+        menu_name: '',
+        menu_code: '',
+        icon: '',
+        description: '',
+        link_type: 'url',
+        link_url: '',
+        permission_type: 'public',
+        is_active: true,
+        is_visible: true,
+        open_new_window: false,
+      };
+    }
+    // 수정 모드: 기존 메뉴 데이터
+    return menu || {};
+  };
+
+  const [formData, setFormData] = useState<Partial<Menu>>(getInitialFormData);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // 부모 메뉴 목록 조회
   const { data: parentMenus = [] } = useQuery({
     queryKey: ['parent-menus', formData.menu_type],
-    queryFn: () => fetchMenuTree(formData.menu_type || 'site'),
+    queryFn: () => fetchMenuTree(formData.menu_type || defaultMenuType),
     enabled: !!formData.menu_type,
   });
 
@@ -2561,12 +2617,12 @@ export function MenuDetailPanel({ menu, onSuccess, onCancel }: MenuDetailPanelPr
     },
   });
 
-  // 폼 초기화
+  // CRITICAL: isAddMode 또는 menu 변경 시 폼 초기화
   useEffect(() => {
-    setFormData(menu);
+    setFormData(getInitialFormData());
     setErrors({});
     setShowDeleteConfirm(false);
-  }, [menu]);
+  }, [menu, isAddMode, defaultMenuType]);
 
   // 필드 업데이트 핸들러
   const handleChange = (field: keyof Menu, value: any) => {
@@ -2602,9 +2658,9 @@ export function MenuDetailPanel({ menu, onSuccess, onCancel }: MenuDetailPanelPr
     saveMutation.mutate(formData);
   };
 
-  // 삭제 핸들러
+  // 삭제 핸들러 (수정 모드에서만 동작)
   const handleDelete = () => {
-    if (menu.id) {
+    if (!isAddMode && menu?.id) {
       deleteMutation.mutate(menu.id);
     }
   };
@@ -2615,7 +2671,7 @@ export function MenuDetailPanel({ menu, onSuccess, onCancel }: MenuDetailPanelPr
     <Paper sx={{ p: 3, height: '100%', overflow: 'auto' }}>
       {/* 헤더 */}
       <Typography variant="h6" gutterBottom>
-        {menu.id ? '메뉴 수정' : '새 메뉴 추가'}
+        {isAddMode ? '새 메뉴 추가' : '메뉴 수정'}
       </Typography>
 
       {/* 에러 메시지 */}
@@ -2903,7 +2959,8 @@ export function MenuDetailPanel({ menu, onSuccess, onCancel }: MenuDetailPanelPr
           취소
         </Button>
 
-        {menu.id && (
+        {/* 삭제 버튼은 수정 모드에서만 표시 */}
+        {!isAddMode && menu?.id && (
           <>
             <Box sx={{ flex: 1 }} />
             <Button
@@ -2945,7 +3002,7 @@ export function MenuDetailPanel({ menu, onSuccess, onCancel }: MenuDetailPanelPr
 
 ```tsx
 // pages/admin/menus/index.tsx
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Box } from '@mui/material';
 import { MenuTree } from '@/components/admin/menu/MenuTree';
 import { MenuDetailPanel } from '@/components/admin/menu/MenuDetailPanel';
@@ -2953,30 +3010,64 @@ import type { Menu } from '@/types/menu';
 
 export default function MenuManagementPage() {
   const [selectedMenu, setSelectedMenu] = useState<Menu | null>(null);
+  const [isAddMode, setIsAddMode] = useState(false);  // CRITICAL: 추가 모드 상태
+  const [currentMenuType, setCurrentMenuType] = useState<string>('site');
 
-  const handleSuccess = () => {
-    setSelectedMenu(null);
-  };
+  // CRITICAL: 메뉴 선택 핸들러
+  // isNewMenu가 true면 새 메뉴 추가 모드
+  const handleSelectMenu = useCallback((menu: Menu | null, isNewMenu = false) => {
+    if (isNewMenu) {
+      // 새 메뉴 추가 모드
+      setSelectedMenu(null);
+      setIsAddMode(true);
+      if (menu?.menu_type) {
+        setCurrentMenuType(menu.menu_type);
+      }
+    } else {
+      // 기존 메뉴 선택 (수정 모드)
+      setSelectedMenu(menu);
+      setIsAddMode(false);
+    }
+  }, []);
 
-  const handleCancel = () => {
+  // 성공 핸들러: 폼 닫기
+  const handleSuccess = useCallback(() => {
     setSelectedMenu(null);
-  };
+    setIsAddMode(false);
+  }, []);
+
+  // 취소 핸들러: 폼 닫기
+  const handleCancel = useCallback(() => {
+    setSelectedMenu(null);
+    setIsAddMode(false);
+  }, []);
+
+  // 메뉴 타입 변경 핸들러
+  const handleMenuTypeChange = useCallback((menuType: string) => {
+    setCurrentMenuType(menuType);
+  }, []);
+
+  // 패널 표시 여부: 메뉴 선택됨 OR 추가 모드
+  const showPanel = selectedMenu !== null || isAddMode;
 
   return (
     <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
       {/* 좌측: 메뉴 트리 (280px) */}
       <Box sx={{ width: 280, borderRight: 1, borderColor: 'divider', overflow: 'hidden' }}>
         <MenuTree
-          onSelect={setSelectedMenu}
+          onSelect={handleSelectMenu}
+          onMenuTypeChange={handleMenuTypeChange}
           selectedId={selectedMenu?.id}
         />
       </Box>
 
       {/* 우측: 상세 패널 */}
       <Box sx={{ flex: 1, overflow: 'hidden' }}>
-        {selectedMenu ? (
+        {showPanel ? (
           <MenuDetailPanel
             menu={selectedMenu}
+            isAddMode={isAddMode}           // CRITICAL: 추가 모드 전달
+            defaultMenuType={currentMenuType}
             onSuccess={handleSuccess}
             onCancel={handleCancel}
           />
@@ -2991,6 +3082,11 @@ export default function MenuManagementPage() {
   );
 }
 ```
+
+**CRITICAL: isAddMode 패턴 필수 사용**
+
+새 메뉴 추가 시 반드시 `isAddMode` 상태를 사용해야 합니다.
+`{ id: 0 }` 객체를 전달하는 방식은 JavaScript의 falsy 체크 문제로 버그가 발생합니다.
 
 ### 스타일 가이드
 
