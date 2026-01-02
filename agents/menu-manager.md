@@ -42,7 +42,47 @@ Use menu-manager to add submenu "회사소개" under "서비스소개"
 
 ---
 
-## Phase 0: 기술 스택 분석 (CRITICAL)
+## Phase 0: 사전 검증 및 초기화 (CRITICAL)
+
+> **중요**: 코드 생성 전 반드시 다음을 확인합니다.
+
+### Step 1: 공유 테이블 존재 확인
+
+```sql
+-- 공유 테이블 확인 (shared-schema 의존성)
+SELECT TABLE_NAME
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME IN ('user_groups', 'user_group_members', 'roles', 'user_roles');
+```
+
+**결과가 4개 미만이면:**
+```
+⚠️ 공유 테이블이 초기화되지 않았습니다.
+🔧 자동으로 shared-schema를 초기화합니다...
+```
+
+→ `shared-schema.md`의 스키마를 먼저 실행
+
+### Step 2: 메뉴 테이블 존재 확인
+
+```sql
+-- 메뉴 테이블 확인
+SELECT TABLE_NAME
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME IN ('menus', 'menu_permissions', 'related_sites', 'menu_audit_logs');
+```
+
+**결과가 4개 미만이면:**
+```
+⚠️ 메뉴 테이블이 초기화되지 않았습니다.
+🔧 자동으로 메뉴 스키마를 초기화합니다...
+```
+
+→ 메뉴 스키마 생성 실행 (이 문서의 스키마 섹션)
+
+### Step 3: 기술 스택 분석
 
 > **중요**: 코드 생성 전 반드시 프로젝트 기술 스택을 분석합니다.
 
@@ -272,105 +312,16 @@ CREATE TABLE menus (
 );
 ```
 
-### user_groups (사용자 그룹)
+### user_groups, user_group_members, roles, user_roles (공유 테이블)
 
-```sql
-CREATE TABLE user_groups (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  group_name VARCHAR(100) NOT NULL,           -- 그룹명
-  group_code VARCHAR(50) NOT NULL UNIQUE,     -- 그룹 코드
-  description VARCHAR(500),                   -- 설명
-  priority INT DEFAULT 0,                     -- 우선순위 (높을수록 상위)
-
-  -- 그룹 타입
-  group_type ENUM('system', 'custom') DEFAULT 'custom',
-  -- system: 시스템 기본 그룹 (수정 불가)
-  -- custom: 관리자 생성 그룹
-
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  created_by VARCHAR(100),
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  updated_by VARCHAR(100),
-  is_active BOOLEAN DEFAULT TRUE,
-  is_deleted BOOLEAN DEFAULT FALSE
-);
-
--- 기본 그룹 INSERT
-INSERT INTO user_groups (group_name, group_code, priority, group_type, created_by) VALUES
-('전체 회원', 'all_members', 0, 'system', 'system'),
-('일반 회원', 'regular', 10, 'system', 'system'),
-('VIP 회원', 'vip', 50, 'system', 'system'),
-('프리미엄 회원', 'premium', 80, 'system', 'system');
-```
-
-### user_group_members (사용자-그룹 매핑)
-
-```sql
-CREATE TABLE user_group_members (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  user_id VARCHAR(50) NOT NULL,               -- 사용자 ID
-  group_id BIGINT NOT NULL,                   -- 그룹 ID
-
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  created_by VARCHAR(100),
-
-  UNIQUE KEY uk_user_group (user_id, group_id),
-  FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE,
-  INDEX idx_user (user_id),
-  INDEX idx_group (group_id)
-);
-```
-
-### roles (역할)
-
-```sql
-CREATE TABLE roles (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  role_name VARCHAR(100) NOT NULL,            -- 역할명
-  role_code VARCHAR(50) NOT NULL UNIQUE,      -- 역할 코드
-  description VARCHAR(500),                   -- 설명
-  priority INT DEFAULT 0,                     -- 우선순위
-
-  -- 역할 범위
-  role_scope ENUM('admin', 'user', 'both') DEFAULT 'both',
-  -- admin: 관리자 전용
-  -- user: 사용자 전용
-  -- both: 모두 사용
-
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  created_by VARCHAR(100),
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  updated_by VARCHAR(100),
-  is_active BOOLEAN DEFAULT TRUE,
-  is_deleted BOOLEAN DEFAULT FALSE
-);
-
--- 기본 역할 INSERT
-INSERT INTO roles (role_name, role_code, priority, role_scope, created_by) VALUES
-('슈퍼관리자', 'super_admin', 100, 'admin', 'system'),
-('관리자', 'admin', 50, 'admin', 'system'),
-('매니저', 'manager', 30, 'admin', 'system'),
-('에디터', 'editor', 20, 'both', 'system'),
-('뷰어', 'viewer', 10, 'both', 'system');
-```
-
-### user_roles (사용자-역할 매핑)
-
-```sql
-CREATE TABLE user_roles (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  user_id VARCHAR(50) NOT NULL,
-  role_id BIGINT NOT NULL,
-
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  created_by VARCHAR(100),
-
-  UNIQUE KEY uk_user_role (user_id, role_id),
-  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
-  INDEX idx_user (user_id),
-  INDEX idx_role (role_id)
-);
-```
+> **참고**: 다음 테이블들은 `shared-schema.md`에서 정의됩니다:
+> - `user_groups`: 사용자 그룹
+> - `user_group_members`: 사용자-그룹 매핑
+> - `roles`: 역할
+> - `user_roles`: 사용자-역할 매핑
+>
+> 메뉴 관리 시스템은 해당 테이블을 참조만 합니다.
+> 초기화 시 `shared-schema`가 먼저 실행되어야 합니다.
 
 ### menu_permissions (메뉴 권한 매핑)
 

@@ -38,7 +38,47 @@ Use board-generator to create 후기게시판 with code: review, categories: 병
 
 ---
 
-## Phase 0: 기술 스택 분석 (CRITICAL)
+## Phase 0: 사전 검증 및 초기화 (CRITICAL)
+
+> **중요**: 코드 생성 전 반드시 다음을 확인합니다.
+
+### Step 1: 공유 테이블 존재 확인
+
+```sql
+-- 공유 테이블 확인 (shared-schema 의존성)
+SELECT TABLE_NAME
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME IN ('user_groups', 'user_group_members', 'roles', 'user_roles');
+```
+
+**결과가 4개 미만이면:**
+```
+⚠️ 공유 테이블이 초기화되지 않았습니다.
+🔧 자동으로 shared-schema를 초기화합니다...
+```
+
+→ `shared-schema.md`의 스키마를 먼저 실행
+
+### Step 2: 게시판 테이블 존재 확인
+
+```sql
+-- 게시판 테이블 확인
+SELECT TABLE_NAME
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME IN ('boards', 'board_categories', 'board_posts', 'board_comments', 'board_attachments', 'board_likes');
+```
+
+**결과가 6개 미만이면:**
+```
+⚠️ 게시판 테이블이 초기화되지 않았습니다.
+🔧 자동으로 게시판 스키마를 초기화합니다...
+```
+
+→ 게시판 스키마 생성 실행 (이 문서의 스키마 섹션)
+
+### Step 3: 기술 스택 분석
 
 > **중요**: 코드 생성 전 반드시 프로젝트 기술 스택을 분석합니다.
 
@@ -340,36 +380,10 @@ CREATE TABLE board_likes (
 );
 ```
 
-### user_groups (사용자 그룹)
+### user_groups, user_group_members (공유 테이블)
 
-```sql
-CREATE TABLE user_groups (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  group_name VARCHAR(100) NOT NULL,
-  description VARCHAR(500),
-  is_active BOOLEAN DEFAULT TRUE,
-  is_deleted BOOLEAN DEFAULT FALSE,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  created_by VARCHAR(100),
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  updated_by VARCHAR(100)
-);
-```
-
-### user_group_members (사용자-그룹 매핑)
-
-```sql
-CREATE TABLE user_group_members (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  user_id VARCHAR(50) NOT NULL,
-  group_id BIGINT NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  created_by VARCHAR(100),
-
-  UNIQUE KEY uk_user_group (user_id, group_id),
-  FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE
-);
-```
+> **참고**: `user_groups`와 `user_group_members` 테이블은 `shared-schema.md`에서 정의됩니다.
+> 게시판 시스템은 해당 테이블을 참조만 합니다.
 
 ---
 
