@@ -11,6 +11,35 @@ project-init 에이전트가 참조하는 스택별 설정입니다.
 
 ---
 
+## 의존성 버전 정책
+
+> **항상 최신 버전 사용**: 패키지 설치 시 `npm info [package] version` 으로 최신 버전 조회
+
+```bash
+# 최신 버전 조회 예시
+npm info next version
+npm info react version
+npm info @tanstack/react-query version
+npm info zustand version
+npm info zod version
+npm info tailwindcss version
+npm info typescript version
+```
+
+**권장 최소 버전 (2025년 1월 기준):**
+
+| 패키지 | 최소 버전 | 비고 |
+|--------|-----------|------|
+| next | 16.x | Turbopack 기본, React Compiler |
+| react | 19.x | View Transitions, useEffectEvent |
+| @tanstack/react-query | 5.x | |
+| zustand | 5.x | |
+| zod | 4.x | 성능 개선, 새 기능 |
+| tailwindcss | 4.x | 새 아키텍처 |
+| typescript | 5.7+ | |
+
+---
+
 ## Next.js Full Stack (권장)
 
 ```

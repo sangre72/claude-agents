@@ -36,13 +36,19 @@ Use project-init --auth=social     # 소셜 로그인만
 > - Phase 4: `auth-backend` + `auth-frontend` 병렬
 > - Phase 5: `menu-backend` + `menu-frontend` 병렬
 
-### Phase 1: 기술 스택 감지
+### Phase 1: 기술 스택 감지 + 최신 버전 조회
 
 ```bash
+# 스택 감지
 ls package.json requirements.txt pom.xml 2>/dev/null
-grep -E "react|vue|angular" frontend/package.json 2>/dev/null
-grep -E "mysql|postgres|mongodb" package.json requirements.txt 2>/dev/null
+
+# 최신 버전 조회 (npm 프로젝트)
+npm info next version
+npm info react version
+npm info @tanstack/react-query version
 ```
+
+> **중요**: 항상 최신 버전 사용. 상세 버전 정책은 `project-init-stacks.md` 참조
 
 ### Phase 2: CLAUDE.md 생성
 
