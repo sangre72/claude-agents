@@ -49,10 +49,10 @@ Use board-generator to create 후기게시판 with code: review, categories: 병
 SELECT TABLE_NAME
 FROM information_schema.TABLES
 WHERE TABLE_SCHEMA = DATABASE()
-  AND TABLE_NAME IN ('user_groups', 'user_group_members', 'roles', 'user_roles');
+  AND TABLE_NAME IN ('tenants', 'user_groups', 'user_group_members', 'roles', 'user_roles');
 ```
 
-**결과가 4개 미만이면:**
+**결과가 5개 미만이면:**
 ```
 ⚠️ 공유 테이블이 초기화되지 않았습니다.
 🔧 자동으로 shared-schema를 초기화합니다...
@@ -185,7 +185,11 @@ const detectStack = async () => {
 ```sql
 CREATE TABLE boards (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  board_code VARCHAR(50) NOT NULL UNIQUE,     -- 게시판 코드 (URL에 사용)
+
+  -- 테넌트 (멀티사이트)
+  tenant_id BIGINT NOT NULL,                  -- 테넌트 ID (shared-schema.tenants 참조)
+
+  board_code VARCHAR(50) NOT NULL,            -- 게시판 코드 (URL에 사용)
   board_name VARCHAR(100) NOT NULL,           -- 게시판 이름
   description TEXT,                           -- 게시판 설명
   board_type ENUM('notice', 'free', 'qna', 'gallery', 'faq', 'review') DEFAULT 'free',
@@ -227,7 +231,12 @@ CREATE TABLE boards (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   updated_by VARCHAR(100),
   is_active BOOLEAN DEFAULT TRUE,
-  is_deleted BOOLEAN DEFAULT FALSE
+  is_deleted BOOLEAN DEFAULT FALSE,
+
+  -- 테넌트별 고유 게시판 코드
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  UNIQUE KEY uk_tenant_board (tenant_id, board_code),
+  INDEX idx_tenant (tenant_id)
 );
 ```
 
@@ -380,10 +389,15 @@ CREATE TABLE board_likes (
 );
 ```
 
-### user_groups, user_group_members (공유 테이블)
+### tenants, user_groups, user_group_members (공유 테이블)
 
-> **참고**: `user_groups`와 `user_group_members` 테이블은 `shared-schema.md`에서 정의됩니다.
+> **참고**: 다음 테이블들은 `shared-schema.md`에서 정의됩니다:
+> - `tenants`: 테넌트 (멀티사이트) - **boards.tenant_id가 참조**
+> - `user_groups`: 사용자 그룹
+> - `user_group_members`: 사용자-그룹 매핑
+>
 > 게시판 시스템은 해당 테이블을 참조만 합니다.
+> 초기화 시 `shared-schema`가 먼저 실행되어야 합니다.
 
 ---
 

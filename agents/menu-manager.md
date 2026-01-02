@@ -53,10 +53,10 @@ Use menu-manager to add submenu "회사소개" under "서비스소개"
 SELECT TABLE_NAME
 FROM information_schema.TABLES
 WHERE TABLE_SCHEMA = DATABASE()
-  AND TABLE_NAME IN ('user_groups', 'user_group_members', 'roles', 'user_roles');
+  AND TABLE_NAME IN ('tenants', 'user_groups', 'user_group_members', 'roles', 'user_roles');
 ```
 
-**결과가 4개 미만이면:**
+**결과가 5개 미만이면:**
 ```
 ⚠️ 공유 테이블이 초기화되지 않았습니다.
 🔧 자동으로 shared-schema를 초기화합니다...
@@ -236,6 +236,9 @@ const detectStack = async () => {
 CREATE TABLE menus (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
 
+  -- 테넌트 (멀티사이트)
+  tenant_id BIGINT NOT NULL,                  -- 테넌트 ID (shared-schema.tenants 참조)
+
   -- 메뉴 타입
   menu_type ENUM('site', 'user', 'admin', 'header_utility', 'footer_utility', 'quick_menu') NOT NULL,
 
@@ -304,17 +307,20 @@ CREATE TABLE menus (
   is_active BOOLEAN DEFAULT TRUE,
   is_deleted BOOLEAN DEFAULT FALSE,
 
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
   FOREIGN KEY (parent_id) REFERENCES menus(id) ON DELETE SET NULL,
-  UNIQUE KEY uk_type_code (menu_type, menu_code),
-  INDEX idx_type_parent (menu_type, parent_id, sort_order),
+  UNIQUE KEY uk_tenant_type_code (tenant_id, menu_type, menu_code),
+  INDEX idx_tenant (tenant_id),
+  INDEX idx_type_parent (tenant_id, menu_type, parent_id, sort_order),
   INDEX idx_path (path),
   INDEX idx_virtual_path (virtual_path)
 );
 ```
 
-### user_groups, user_group_members, roles, user_roles (공유 테이블)
+### tenants, user_groups, roles 등 (공유 테이블)
 
 > **참고**: 다음 테이블들은 `shared-schema.md`에서 정의됩니다:
+> - `tenants`: 테넌트 (멀티사이트) - **menus.tenant_id가 참조**
 > - `user_groups`: 사용자 그룹
 > - `user_group_members`: 사용자-그룹 매핑
 > - `roles`: 역할
@@ -1394,6 +1400,35 @@ export default function MenuManagementPage() {
 
 ### 트리 컴포넌트 (드래그앤드롭 포함)
 
+> **CRITICAL**: 드래그앤드롭 라이브러리는 프로젝트 환경에 맞게 선택해야 합니다.
+
+#### 환경별 드래그앤드롭 라이브러리 (MUST CHECK)
+
+| Frontend | UI Library | 추천 DnD 라이브러리 | 설치 |
+|----------|------------|-------------------|------|
+| **React** | MUI | `@minoru/react-dnd-treeview` | `npm i @minoru/react-dnd-treeview react-dnd react-dnd-html5-backend` |
+| **React** | Ant Design | `antd` 내장 Tree | 별도 설치 불필요 (`<Tree draggable>`) |
+| **React** | Bootstrap | `react-sortable-tree` | `npm i @nosferatu500/react-sortable-tree` |
+| **Vue 3** | Element Plus | `vue-draggable-plus` | `npm i vue-draggable-plus` |
+| **Vue 3** | Vuetify | `vuedraggable` | `npm i vuedraggable@next` |
+| **Angular** | Angular Material | `@angular/cdk/drag-drop` | 내장 모듈 |
+| **Next.js** | MUI | `@minoru/react-dnd-treeview` | React와 동일 |
+
+#### 설치 전 확인 (CRITICAL)
+
+```bash
+# 1. 프로젝트 환경 확인
+cat frontend/package.json | grep -E '"react"|"vue"|"@angular"'
+
+# 2. UI 라이브러리 확인
+cat frontend/package.json | grep -E '"@mui|"antd"|"element-plus"|"vuetify"|"bootstrap"'
+
+# 3. 이미 설치된 DnD 라이브러리 확인
+cat frontend/package.json | grep -E '"react-dnd"|"vuedraggable"|"sortable"|"dnd"'
+```
+
+#### React + MUI (기본 예제)
+
 ```tsx
 // components/admin/menu/MenuTree.tsx
 import { Tree } from '@minoru/react-dnd-treeview';
@@ -1447,6 +1482,113 @@ export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
         새 메뉴 추가
       </Button>
     </Box>
+  );
+}
+```
+
+#### Vue 3 + Element Plus (대체 예제)
+
+```vue
+<!-- components/admin/menu/MenuTree.vue -->
+<template>
+  <div class="menu-tree">
+    <!-- 메뉴 타입 탭 -->
+    <el-tabs v-model="menuType">
+      <el-tab-pane label="사이트" name="site" />
+      <el-tab-pane label="사용자" name="user" />
+      <el-tab-pane label="관리자" name="admin" />
+    </el-tabs>
+
+    <!-- 트리 (드래그앤드롭 지원) -->
+    <el-tree
+      :data="menus"
+      :props="{ label: 'menu_name', children: 'children' }"
+      draggable
+      :allow-drag="allowDrag"
+      :allow-drop="allowDrop"
+      @node-drop="handleDrop"
+      @node-click="handleSelect"
+      node-key="id"
+      :highlight-current="true"
+      :default-expand-all="true"
+    >
+      <template #default="{ node, data }">
+        <span class="tree-node">
+          <el-icon v-if="data.children?.length">
+            <Folder />
+          </el-icon>
+          <el-icon v-else>
+            <Document />
+          </el-icon>
+          <span>{{ node.label }}</span>
+        </span>
+      </template>
+    </el-tree>
+
+    <!-- 새 메뉴 추가 -->
+    <el-button @click="handleAddNew" style="margin: 16px">
+      <el-icon><Plus /></el-icon>
+      새 메뉴 추가
+    </el-button>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { Folder, Document, Plus } from '@element-plus/icons-vue'
+import type { Menu } from '@/types/menu'
+
+const emit = defineEmits<{
+  (e: 'select', menu: Menu): void
+}>()
+
+const menuType = ref('site')
+const menus = ref<Menu[]>([])
+
+const handleDrop = async (draggingNode, dropNode, dropType) => {
+  await reorderMenus(draggingNode.data.id, dropNode.data.id, dropType)
+}
+
+const handleSelect = (data: Menu) => {
+  emit('select', data)
+}
+</script>
+```
+
+#### Ant Design Tree (드래그앤드롭 내장)
+
+```tsx
+// components/admin/menu/MenuTree.tsx (Ant Design)
+import { Tree } from 'antd';
+import type { DataNode, TreeProps } from 'antd/es/tree';
+import { FolderOutlined, FileOutlined, PlusOutlined } from '@ant-design/icons';
+
+export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
+  const { data: menus } = useQuery(['admin-menus'], fetchMenuTree);
+
+  const onDrop: TreeProps['onDrop'] = async (info) => {
+    const dragKey = info.dragNode.key;
+    const dropKey = info.node.key;
+    const dropPos = info.node.pos.split('-');
+    const dropPosition = info.dropPosition - Number(dropPos[dropPos.length - 1]);
+
+    await reorderMenus(dragKey, dropKey, dropPosition);
+  };
+
+  return (
+    <div>
+      <Tree
+        showIcon
+        draggable
+        onDrop={onDrop}
+        onSelect={(keys) => onSelect(findMenu(keys[0]))}
+        selectedKeys={[selectedId]}
+        treeData={menus}
+        icon={(nodeProps) =>
+          nodeProps.children ? <FolderOutlined /> : <FileOutlined />
+        }
+      />
+    </div>
   );
 }
 ```
