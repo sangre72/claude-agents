@@ -2667,12 +2667,85 @@ export function MenuDetailPanel({ menu, isAddMode, defaultMenuType = 'site', onS
 
   const isLoading = saveMutation.isPending || deleteMutation.isPending;
 
+  // 부모 메뉴 경로 계산 (Breadcrumb용)
+  const getMenuPath = (): string[] => {
+    if (!formData.parent_id) return [];
+
+    const path: string[] = [];
+    let currentParentId = formData.parent_id;
+
+    // parentMenus에서 경로 추적 (최대 5단계)
+    for (let i = 0; i < 5 && currentParentId; i++) {
+      const parent = parentMenus.find((m: any) => m.id === currentParentId);
+      if (parent) {
+        path.unshift(parent.text || parent.menu_name);
+        currentParentId = parent.parent_id;
+      } else {
+        break;
+      }
+    }
+    return path;
+  };
+
+  const menuPath = getMenuPath();
+  const parentMenuName = menuPath.length > 0 ? menuPath[menuPath.length - 1] : null;
+
   return (
     <Paper sx={{ p: 3, height: '100%', overflow: 'auto' }}>
       {/* 헤더 */}
       <Typography variant="h6" gutterBottom>
         {isAddMode ? '새 메뉴 추가' : '메뉴 수정'}
       </Typography>
+
+      {/* 현재 위치 표시 (Breadcrumb) - 상/하위 구분 명확화 */}
+      <Box sx={{ mb: 2, p: 1.5, bgcolor: 'grey.100', borderRadius: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+          현재 위치
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+          <Chip
+            label={formData.menu_type === 'site' ? '사이트' : formData.menu_type === 'admin' ? '관리자' : '사용자'}
+            size="small"
+            color="primary"
+            variant="outlined"
+          />
+          <Typography variant="body2" color="text.secondary">{'>'}</Typography>
+
+          {menuPath.length > 0 ? (
+            <>
+              {menuPath.map((name, idx) => (
+                <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Chip label={name} size="small" variant="outlined" />
+                  <Typography variant="body2" color="text.secondary">{'>'}</Typography>
+                </Box>
+              ))}
+              <Chip
+                label={formData.menu_name || '(새 메뉴)'}
+                size="small"
+                color="primary"
+              />
+            </>
+          ) : (
+            <Chip
+              label={formData.menu_name || '(최상위 메뉴)'}
+              size="small"
+              color="primary"
+            />
+          )}
+        </Box>
+
+        {/* 부모 메뉴 명시적 표시 */}
+        {parentMenuName && (
+          <Typography variant="body2" sx={{ mt: 1, fontWeight: 500 }}>
+            📁 상위 메뉴: <strong>{parentMenuName}</strong>
+          </Typography>
+        )}
+        {!parentMenuName && !isAddMode && (
+          <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
+            📁 최상위 메뉴 (부모 없음)
+          </Typography>
+        )}
+      </Box>
 
       {/* 에러 메시지 */}
       {errors.submit && (
