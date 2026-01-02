@@ -48,6 +48,11 @@ Use project-init --auth=all        # 전체 (기본값)
 
 ## 실행 단계
 
+> **병렬 실행 원칙**: 의존성이 없는 에이전트들은 동시에 실행하여 효율성을 높입니다.
+> - Phase 4: `auth-backend` + `auth-frontend` 병렬
+> - Phase 5: `menu-backend` + `menu-frontend` 병렬
+> - Phase 6-8: `tenant-manager`, `category-manager`, `board-generator`는 순차 실행 (의존성 있음)
+
 ### Phase 1: 기술 스택 감지
 
 ```bash
@@ -78,18 +83,22 @@ Use shared-schema --init
 
 ### Phase 4: 인증 시스템 생성
 
+> **병렬 실행**: `auth-backend`와 `auth-frontend`는 동시에 실행 가능
+
 ```bash
-# Backend (인증 방식에 따라 선택)
-Use auth-backend --init                    # 전체 인증 시스템
+# Backend + Frontend 병렬 실행
 Use auth-backend --init --type=phone       # 휴대폰 인증 기반
+Use auth-frontend --init                   # 동시 실행 가능
+
+# Backend 추가 옵션
+Use auth-backend --init                    # 전체 인증 시스템
 Use auth-backend --init --type=email       # 이메일/비밀번호 기반
 Use auth-backend --init --type=jwt         # JWT 토큰 기반
 Use auth-backend --feature=social-kakao    # 카카오 소셜 로그인 추가
 Use auth-backend --feature=social-naver    # 네이버 소셜 로그인 추가
 Use auth-backend --feature=social-google   # 구글 소셜 로그인 추가
 
-# Frontend
-Use auth-frontend --init
+# Frontend 추가 옵션
 Use auth-frontend --page=phone-login       # 휴대폰 로그인 페이지
 Use auth-frontend --page=social-login      # 소셜 로그인 페이지
 ```
@@ -115,12 +124,12 @@ Use auth-frontend --page=social-login      # 소셜 로그인 페이지
 
 ### Phase 5: 메뉴 관리 시스템 생성
 
-```bash
-# Backend
-Use menu-backend --init
+> **병렬 실행**: `menu-backend`와 `menu-frontend`는 동시에 실행 가능
 
-# Frontend
-Use menu-frontend --init
+```bash
+# Backend + Frontend 병렬 실행
+Use menu-backend --init                  # Backend
+Use menu-frontend --init                 # 동시 실행 가능
 
 # 메뉴 타입별 생성
 Use menu-manager --type=site             # 사이트 전체 메뉴 (GNB)
