@@ -2596,6 +2596,7 @@ import {
   AccordionDetails, Autocomplete, Chip, CircularProgress
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FolderIcon from '@mui/icons-material/Folder';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { saveMenu, deleteMenu, fetchMenuTree } from '@/lib/api/menuApi';
 import { fetchUserGroups, fetchRoles } from '@/lib/api/commonApi';
@@ -2850,7 +2851,7 @@ export function MenuDetailPanel({ menu, isAddMode, defaultMenuType = 'site', onS
                 disabled={!!menu.id}
               />
             </Grid>
-            <Grid item xs={6}>
+            <Grid item xs={12}>
               <FormControl fullWidth>
                 <InputLabel>상위 메뉴</InputLabel>
                 <Select
@@ -2858,15 +2859,63 @@ export function MenuDetailPanel({ menu, isAddMode, defaultMenuType = 'site', onS
                   onChange={(e) => handleChange('parent_id', e.target.value || null)}
                   label="상위 메뉴"
                 >
-                  <MenuItem value="">없음 (최상위)</MenuItem>
+                  <MenuItem value="">
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <FolderIcon fontSize="small" color="action" />
+                      <Typography>없음 (최상위 메뉴)</Typography>
+                    </Box>
+                  </MenuItem>
                   {parentMenus
-                    .filter((m: any) => m.id !== menu.id)
-                    .map((m: any) => (
-                      <MenuItem key={m.id} value={m.id}>
-                        {'　'.repeat(m.depth || 0)}{m.text || m.menu_name}
-                      </MenuItem>
-                    ))}
+                    // CRITICAL: 자기 자신 및 하위 메뉴는 선택 불가
+                    .filter((m: any) => {
+                      // 추가 모드면 모든 메뉴 선택 가능
+                      if (isAddMode) return true;
+                      // 자기 자신 제외
+                      if (m.id === menu?.id) return false;
+                      // 자신의 하위 메뉴 제외 (path 기반 체크)
+                      // m.data.path에 현재 메뉴 ID가 포함되어 있으면 하위 메뉴임
+                      const menuData = m.data || m;
+                      if (menuData.path && menu?.id) {
+                        const pathIds = menuData.path.split('/').map(Number);
+                        if (pathIds.includes(menu.id)) return false;
+                      }
+                      return true;
+                    })
+                    .map((m: any) => {
+                      const menuData = m.data || m;
+                      const depth = menuData.depth || 0;
+                      const isCurrentParent = m.id === formData.parent_id;
+
+                      return (
+                        <MenuItem
+                          key={m.id}
+                          value={m.id}
+                          sx={{
+                            pl: 2 + depth * 2,
+                            bgcolor: isCurrentParent ? 'action.selected' : 'inherit',
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {depth > 0 ? (
+                              <Typography color="text.secondary" sx={{ mr: 0.5 }}>
+                                {'└'.padStart(depth, '　')}
+                              </Typography>
+                            ) : null}
+                            <FolderIcon fontSize="small" color={isCurrentParent ? 'primary' : 'action'} />
+                            <Typography>
+                              {m.text || menuData.menu_name}
+                            </Typography>
+                            {isCurrentParent && (
+                              <Chip label="현재 상위" size="small" color="primary" sx={{ ml: 1 }} />
+                            )}
+                          </Box>
+                        </MenuItem>
+                      );
+                    })}
                 </Select>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, ml: 1.5 }}>
+                  자기 자신 및 하위 메뉴는 상위로 설정할 수 없습니다
+                </Typography>
               </FormControl>
             </Grid>
             <Grid item xs={6}>
