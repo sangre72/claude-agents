@@ -2798,11 +2798,43 @@ export function MenuDetailPanel({ menu, isAddMode, defaultMenuType = 'site', onS
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // 부모 메뉴 목록 조회
+  // 계층형 트리를 flat list로 변환하는 헬퍼 함수
+  const flattenMenuTree = (menus: any[], parentId: number | null = null, depth: number = 0): any[] => {
+    const result: any[] = [];
+    for (const menu of menus) {
+      // 현재 메뉴를 flat list에 추가 (parent_id와 depth 포함)
+      result.push({
+        id: menu.id,
+        menu_name: menu.menu_name || menu.text,
+        parent_id: parentId,
+        depth: depth,
+        ...menu,
+      });
+      // children이 있으면 재귀적으로 처리
+      if (menu.children && Array.isArray(menu.children) && menu.children.length > 0) {
+        result.push(...flattenMenuTree(menu.children, menu.id, depth + 1));
+      }
+    }
+    return result;
+  };
+
+  // 부모 메뉴 목록 조회 (flat list로 변환)
   const { data: parentMenus = [] } = useQuery({
     queryKey: ['parent-menus', formData.menu_type],
     queryFn: () => fetchMenuTree(formData.menu_type || defaultMenuType),
     enabled: !!formData.menu_type,
+    // CRITICAL: 계층형 트리를 flat list로 변환
+    select: (data: any) => {
+      // 이미 flat list인 경우 (parent_id 속성이 있음)
+      if (Array.isArray(data) && data.length > 0 && data[0].parent_id !== undefined) {
+        return data;
+      }
+      // 계층형 트리인 경우 (children 속성이 있음)
+      if (Array.isArray(data)) {
+        return flattenMenuTree(data);
+      }
+      return [];
+    },
   });
 
   // 사용자 그룹 목록
@@ -2892,7 +2924,7 @@ export function MenuDetailPanel({ menu, isAddMode, defaultMenuType = 'site', onS
   const isLoading = saveMutation.isPending || deleteMutation.isPending;
 
   // 부모 메뉴 경로 계산 (Breadcrumb용)
-  // CRITICAL: parentMenus는 NodeModel 형식 또는 원본 Menu 형식일 수 있음
+  // parentMenus는 flattenMenuTree로 변환되어 항상 { id, parent_id, menu_name, depth } 형식
   const getMenuPath = (): { id: number; name: string }[] => {
     if (!formData.parent_id) return [];
 
@@ -2901,31 +2933,17 @@ export function MenuDetailPanel({ menu, isAddMode, defaultMenuType = 'site', onS
 
     // parentMenus에서 경로 추적 (최대 10단계)
     for (let i = 0; i < 10 && currentParentId; i++) {
-      // NodeModel 형식: { id, parent, text, data } 또는 Menu 형식: { id, parent_id, menu_name }
-      const found = parentMenus.find((m: any) => {
-        const menuId = m.id ?? m.data?.id;
-        return menuId === currentParentId;
-      });
+      const found = parentMenus.find((m: any) => m.id === currentParentId);
 
       if (found) {
-        // NodeModel인 경우
-        if (found.text !== undefined) {
-          path.unshift({
-            id: found.id as number,
-            name: found.text || found.data?.menu_name || '(이름없음)',
-          });
-          // parent가 0이면 루트이므로 null로 처리
-          currentParentId = found.parent === 0 ? null : (found.parent as number);
-        }
-        // 원본 Menu 형식인 경우
-        else {
-          path.unshift({
-            id: found.id,
-            name: found.menu_name || '(이름없음)',
-          });
-          currentParentId = found.parent_id ?? null;
-        }
+        path.unshift({
+          id: found.id,
+          name: found.menu_name || found.text || '(이름없음)',
+        });
+        currentParentId = found.parent_id ?? null;
       } else {
+        // 못 찾으면 중단
+        console.warn(`Parent menu not found: ${currentParentId}`);
         break;
       }
     }
