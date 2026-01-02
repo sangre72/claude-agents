@@ -1252,6 +1252,249 @@ export default function HeaderUtility() {
 
 ---
 
+## 한국형 Admin UI 패턴 (--type=admin 시 적용)
+
+> **적용 조건**: `--type=admin` 또는 관리자 메뉴 관리 화면 생성 시 자동 적용
+
+### 레이아웃 구조
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Header (로고, 사용자 정보, 로그아웃)                           │
+├────────────────┬─────────────────────────────────────────────┤
+│                │                                              │
+│   좌측 트리     │              우측 상세 패널                   │
+│   (280px)      │                                              │
+│                │  ┌─────────────────────────────────────────┐ │
+│  📁 메뉴관리    │  │  메뉴 정보                               │ │
+│   ├─ 사이트    │  │  ─────────────────────────────────────  │ │
+│   ├─ 사용자    │  │  메뉴명: [입력필드]                       │ │
+│   └─ 관리자    │  │  메뉴코드: [입력필드]                     │ │
+│                │  │  상위메뉴: [선택]                         │ │
+│  📁 게시판관리  │  │  URL: [입력필드]                          │ │
+│                │  │  ...                                     │ │
+│  📁 회원관리   │  │                                          │ │
+│                │  │  [저장] [삭제] [취소]                     │ │
+│                │  └─────────────────────────────────────────┘ │
+│                │                                              │
+└────────────────┴─────────────────────────────────────────────┘
+```
+
+### 핵심 원칙
+
+| 항목 | 패턴 | 설명 |
+|------|------|------|
+| **레이아웃** | 좌측 트리 + 우측 상세 | 모달 사용 금지, 인라인 편집 |
+| **트리 너비** | 280px 고정 | 접기/펼치기 지원 |
+| **편집 방식** | 인라인 편집 | 트리에서 선택 → 우측에서 편집 |
+| **저장** | 즉시 저장 | 저장 버튼 클릭 시 API 호출 |
+| **삭제** | 확인 다이얼로그 | 인라인 확인, 모달 아님 |
+| **드래그앤드롭** | 트리 내 순서 변경 | react-dnd 또는 dnd-kit 사용 |
+
+### 컴포넌트 구조
+
+```tsx
+// pages/admin/menus/index.tsx
+export default function MenuManagementPage() {
+  const [selectedMenu, setSelectedMenu] = useState<Menu | null>(null);
+
+  return (
+    <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+      {/* 좌측: 트리 */}
+      <Box sx={{ width: 280, borderRight: 1, borderColor: 'divider', overflow: 'auto' }}>
+        <MenuTree
+          onSelect={setSelectedMenu}
+          selectedId={selectedMenu?.id}
+        />
+      </Box>
+
+      {/* 우측: 상세 패널 */}
+      <Box sx={{ flex: 1, p: 3, overflow: 'auto' }}>
+        {selectedMenu ? (
+          <MenuDetailPanel
+            menu={selectedMenu}
+            onSave={handleSave}
+            onDelete={handleDelete}
+          />
+        ) : (
+          <EmptyState message="좌측에서 메뉴를 선택하세요" />
+        )}
+      </Box>
+    </Box>
+  );
+}
+```
+
+### 트리 컴포넌트 (드래그앤드롭 포함)
+
+```tsx
+// components/admin/menu/MenuTree.tsx
+import { Tree } from '@minoru/react-dnd-treeview';
+
+interface MenuTreeProps {
+  onSelect: (menu: Menu) => void;
+  selectedId?: number;
+}
+
+export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
+  const { data: menus, refetch } = useQuery(['admin-menus'], fetchMenuTree);
+
+  const handleDrop = async (newTree, { dragSourceId, dropTargetId }) => {
+    // 순서 변경 API 호출
+    await reorderMenus(dragSourceId, dropTargetId, newTree);
+    refetch();
+  };
+
+  return (
+    <Box>
+      {/* 메뉴 타입 탭 */}
+      <Tabs value={menuType} onChange={setMenuType}>
+        <Tab label="사이트" value="site" />
+        <Tab label="사용자" value="user" />
+        <Tab label="관리자" value="admin" />
+      </Tabs>
+
+      {/* 트리 */}
+      <Tree
+        tree={menus}
+        rootId={0}
+        onDrop={handleDrop}
+        render={(node, { depth, isOpen, onToggle }) => (
+          <TreeNode
+            node={node}
+            depth={depth}
+            isOpen={isOpen}
+            isSelected={node.id === selectedId}
+            onToggle={onToggle}
+            onClick={() => onSelect(node.data)}
+          />
+        )}
+      />
+
+      {/* 새 메뉴 추가 버튼 */}
+      <Button
+        startIcon={<AddIcon />}
+        onClick={() => onSelect({ id: 0, menu_type: menuType } as Menu)}
+        sx={{ m: 2 }}
+      >
+        새 메뉴 추가
+      </Button>
+    </Box>
+  );
+}
+```
+
+### 상세 패널 (인라인 편집)
+
+```tsx
+// components/admin/menu/MenuDetailPanel.tsx
+interface MenuDetailPanelProps {
+  menu: Menu;
+  onSave: (menu: Menu) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
+}
+
+export function MenuDetailPanel({ menu, onSave, onDelete }: MenuDetailPanelProps) {
+  const [formData, setFormData] = useState(menu);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  return (
+    <Paper sx={{ p: 3 }}>
+      <Typography variant="h6" gutterBottom>
+        {menu.id ? '메뉴 수정' : '새 메뉴 추가'}
+      </Typography>
+
+      <Grid container spacing={2}>
+        <Grid item xs={6}>
+          <TextField
+            label="메뉴명"
+            value={formData.menu_name}
+            onChange={(e) => setFormData({ ...formData, menu_name: e.target.value })}
+            fullWidth
+            required
+          />
+        </Grid>
+        <Grid item xs={6}>
+          <TextField
+            label="메뉴 코드"
+            value={formData.menu_code}
+            onChange={(e) => setFormData({ ...formData, menu_code: e.target.value })}
+            fullWidth
+            required
+            disabled={!!menu.id}  // 수정 시 코드 변경 불가
+          />
+        </Grid>
+        {/* ... 기타 필드들 */}
+      </Grid>
+
+      {/* 버튼 영역 */}
+      <Box sx={{ mt: 3, display: 'flex', gap: 1 }}>
+        <Button variant="contained" onClick={() => onSave(formData)}>
+          저장
+        </Button>
+        {menu.id && (
+          <>
+            <Button
+              color="error"
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              삭제
+            </Button>
+
+            {/* 인라인 삭제 확인 (모달 아님) */}
+            <Collapse in={showDeleteConfirm}>
+              <Alert
+                severity="warning"
+                action={
+                  <>
+                    <Button size="small" onClick={() => onDelete(menu.id)}>
+                      확인
+                    </Button>
+                    <Button size="small" onClick={() => setShowDeleteConfirm(false)}>
+                      취소
+                    </Button>
+                  </>
+                }
+              >
+                정말 삭제하시겠습니까?
+              </Alert>
+            </Collapse>
+          </>
+        )}
+      </Box>
+    </Paper>
+  );
+}
+```
+
+### 스타일 가이드
+
+```tsx
+// 한국형 Admin 테마 설정
+const adminTheme = createTheme({
+  palette: {
+    primary: { main: '#1976d2' },      // 파란색 계열
+    background: {
+      default: '#f5f5f5',               // 밝은 회색 배경
+      paper: '#ffffff',
+    },
+  },
+  components: {
+    MuiButton: {
+      defaultProps: { size: 'small' },  // 버튼 작게
+    },
+    MuiTextField: {
+      defaultProps: { size: 'small' },  // 입력 필드 작게
+    },
+    MuiTable: {
+      defaultProps: { size: 'small' },  // 테이블 조밀하게
+    },
+  },
+});
+```
+
+---
+
 ## 기본 메뉴 데이터
 
 ### 사이트 메뉴 (GNB)
