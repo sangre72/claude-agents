@@ -811,6 +811,416 @@ export async function moveMenu(
 }
 ```
 
+### 5. 메뉴 생성/수정/삭제 API (CRITICAL - 반드시 구현)
+
+> **CRITICAL**: 메뉴 CRUD는 핵심 기능입니다. 반드시 구현해야 합니다.
+
+#### 메뉴 생성 API
+
+```javascript
+// controllers/menuController.js
+
+/**
+ * 메뉴 생성 API
+ * POST /api/admin/menus
+ */
+async function createMenu(req, res) {
+  const {
+    menu_type,
+    parent_id,
+    menu_name,
+    menu_code,
+    description,
+    icon,
+    virtual_path,
+    link_type,
+    link_url,
+    external_url,
+    modal_component,
+    modal_width,
+    modal_height,
+    permission_type,
+    show_condition,
+    condition_expression,
+    is_visible,
+    is_enabled,
+    is_expandable,
+    default_expanded,
+    css_class,
+    highlight,
+    highlight_text,
+    highlight_color,
+    badge_type,
+    badge_value,
+    badge_color,
+    seo_title,
+    seo_description,
+  } = req.body;
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // 1. 부모 메뉴 정보 조회 (depth, path 계산용)
+    let depth = 0;
+    let path = '';
+    if (parent_id) {
+      const [[parent]] = await connection.execute(
+        'SELECT depth, path FROM menus WHERE id = ? AND tenant_id = ?',
+        [parent_id, req.tenantId]
+      );
+      if (!parent) {
+        return res.status(400).json({ error: '상위 메뉴를 찾을 수 없습니다.' });
+      }
+      depth = parent.depth + 1;
+      path = parent.path ? `${parent.path}/${parent_id}` : `${parent_id}`;
+    }
+
+    // 2. 같은 부모 내 마지막 순서 조회
+    const [[lastOrder]] = await connection.execute(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 as next_order
+       FROM menus
+       WHERE tenant_id = ? AND menu_type = ? AND parent_id <=> ?`,
+      [req.tenantId, menu_type, parent_id]
+    );
+    const sort_order = lastOrder.next_order;
+
+    // 3. 메뉴 코드 중복 검사
+    const [[existing]] = await connection.execute(
+      'SELECT id FROM menus WHERE tenant_id = ? AND menu_type = ? AND menu_code = ?',
+      [req.tenantId, menu_type, menu_code]
+    );
+    if (existing) {
+      return res.status(400).json({ error: '이미 사용 중인 메뉴 코드입니다.' });
+    }
+
+    // 4. 메뉴 생성
+    const [result] = await connection.execute(
+      `INSERT INTO menus (
+        tenant_id, menu_type, parent_id, depth, sort_order, path,
+        menu_name, menu_code, description, icon, virtual_path,
+        link_type, link_url, external_url, modal_component, modal_width, modal_height,
+        permission_type, show_condition, condition_expression,
+        is_visible, is_enabled, is_expandable, default_expanded,
+        css_class, highlight, highlight_text, highlight_color,
+        badge_type, badge_value, badge_color,
+        seo_title, seo_description,
+        created_by, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        req.tenantId, menu_type, parent_id, depth, sort_order, path,
+        menu_name, menu_code, description, icon, virtual_path,
+        link_type || 'url', link_url, external_url, modal_component, modal_width || 800, modal_height || 600,
+        permission_type || 'public', show_condition || 'always', condition_expression,
+        is_visible !== false, is_enabled !== false, is_expandable !== false, default_expanded || false,
+        css_class, highlight || false, highlight_text, highlight_color,
+        badge_type || 'none', badge_value, badge_color || 'primary',
+        seo_title, seo_description,
+        req.user.id
+      ]
+    );
+
+    const newMenuId = result.insertId;
+
+    // 5. path 업데이트 (자기 자신 포함)
+    const newPath = path ? `${path}/${newMenuId}` : `${newMenuId}`;
+    await connection.execute(
+      'UPDATE menus SET path = ? WHERE id = ?',
+      [newPath, newMenuId]
+    );
+
+    // 6. 감사 로그
+    await connection.execute(
+      `INSERT INTO menu_audit_logs (menu_id, user_id, action, changes, created_at)
+       VALUES (?, ?, 'create', ?, NOW())`,
+      [newMenuId, req.user.id, JSON.stringify(req.body)]
+    );
+
+    await connection.commit();
+
+    // 7. 생성된 메뉴 반환
+    const [[newMenu]] = await pool.execute(
+      'SELECT * FROM menus WHERE id = ?',
+      [newMenuId]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: '메뉴가 생성되었습니다.',
+      data: newMenu
+    });
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+```
+
+#### 메뉴 수정 API
+
+```javascript
+/**
+ * 메뉴 수정 API
+ * PUT /api/admin/menus/:id
+ */
+async function updateMenu(req, res) {
+  const { id } = req.params;
+  const updateData = req.body;
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // 1. 기존 메뉴 조회
+    const [[existingMenu]] = await connection.execute(
+      'SELECT * FROM menus WHERE id = ? AND tenant_id = ?',
+      [id, req.tenantId]
+    );
+
+    if (!existingMenu) {
+      return res.status(404).json({ error: '메뉴를 찾을 수 없습니다.' });
+    }
+
+    // 2. 메뉴 코드 중복 검사 (변경된 경우만)
+    if (updateData.menu_code && updateData.menu_code !== existingMenu.menu_code) {
+      const [[duplicate]] = await connection.execute(
+        'SELECT id FROM menus WHERE tenant_id = ? AND menu_type = ? AND menu_code = ? AND id != ?',
+        [req.tenantId, existingMenu.menu_type, updateData.menu_code, id]
+      );
+      if (duplicate) {
+        return res.status(400).json({ error: '이미 사용 중인 메뉴 코드입니다.' });
+      }
+    }
+
+    // 3. 부모 변경 시 depth/path 재계산
+    if (updateData.parent_id !== undefined && updateData.parent_id !== existingMenu.parent_id) {
+      let newDepth = 0;
+      let newPath = '';
+
+      if (updateData.parent_id) {
+        // 자기 자신이나 하위로 이동 금지
+        if (updateData.parent_id === parseInt(id)) {
+          return res.status(400).json({ error: '자기 자신을 상위 메뉴로 설정할 수 없습니다.' });
+        }
+
+        const [[parent]] = await connection.execute(
+          'SELECT id, depth, path FROM menus WHERE id = ?',
+          [updateData.parent_id]
+        );
+
+        if (parent.path && parent.path.includes(`/${id}/`)) {
+          return res.status(400).json({ error: '하위 메뉴를 상위 메뉴로 설정할 수 없습니다.' });
+        }
+
+        newDepth = parent.depth + 1;
+        newPath = parent.path ? `${parent.path}/${updateData.parent_id}` : `${updateData.parent_id}`;
+      }
+
+      updateData.depth = newDepth;
+      updateData.path = newPath ? `${newPath}/${id}` : `${id}`;
+    }
+
+    // 4. 업데이트할 필드 구성
+    const allowedFields = [
+      'menu_name', 'menu_code', 'description', 'icon', 'virtual_path',
+      'link_type', 'link_url', 'external_url', 'modal_component', 'modal_width', 'modal_height',
+      'permission_type', 'show_condition', 'condition_expression',
+      'is_visible', 'is_enabled', 'is_expandable', 'default_expanded',
+      'css_class', 'highlight', 'highlight_text', 'highlight_color',
+      'badge_type', 'badge_value', 'badge_color',
+      'seo_title', 'seo_description',
+      'parent_id', 'depth', 'path'
+    ];
+
+    const updates = [];
+    const values = [];
+
+    for (const field of allowedFields) {
+      if (updateData[field] !== undefined) {
+        updates.push(`${field} = ?`);
+        values.push(updateData[field]);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: '수정할 내용이 없습니다.' });
+    }
+
+    updates.push('updated_by = ?', 'updated_at = NOW()');
+    values.push(req.user.id, id);
+
+    // 5. 메뉴 업데이트
+    await connection.execute(
+      `UPDATE menus SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    // 6. 감사 로그
+    await connection.execute(
+      `INSERT INTO menu_audit_logs (menu_id, user_id, action, changes, created_at)
+       VALUES (?, ?, 'update', ?, NOW())`,
+      [id, req.user.id, JSON.stringify({ before: existingMenu, after: updateData })]
+    );
+
+    await connection.commit();
+
+    // 7. 수정된 메뉴 반환
+    const [[updatedMenu]] = await pool.execute(
+      'SELECT * FROM menus WHERE id = ?',
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: '메뉴가 수정되었습니다.',
+      data: updatedMenu
+    });
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+```
+
+#### 메뉴 삭제 API
+
+```javascript
+/**
+ * 메뉴 삭제 API
+ * DELETE /api/admin/menus/:id
+ */
+async function deleteMenu(req, res) {
+  const { id } = req.params;
+  const { force } = req.query; // force=true면 하위 메뉴도 함께 삭제
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // 1. 메뉴 조회
+    const [[menu]] = await connection.execute(
+      'SELECT * FROM menus WHERE id = ? AND tenant_id = ?',
+      [id, req.tenantId]
+    );
+
+    if (!menu) {
+      return res.status(404).json({ error: '메뉴를 찾을 수 없습니다.' });
+    }
+
+    // 2. 하위 메뉴 확인
+    const [children] = await connection.execute(
+      'SELECT id FROM menus WHERE parent_id = ? AND is_deleted = FALSE',
+      [id]
+    );
+
+    if (children.length > 0 && force !== 'true') {
+      return res.status(400).json({
+        error: '하위 메뉴가 있습니다. 먼저 하위 메뉴를 삭제하거나 force=true 옵션을 사용하세요.',
+        childCount: children.length
+      });
+    }
+
+    // 3. 하위 메뉴 함께 삭제 (force=true인 경우)
+    if (force === 'true' && children.length > 0) {
+      await connection.execute(
+        `UPDATE menus SET is_deleted = TRUE, updated_by = ?, updated_at = NOW()
+         WHERE path LIKE ? OR id = ?`,
+        [req.user.id, `%/${id}/%`, id]
+      );
+    } else {
+      // 4. 소프트 삭제
+      await connection.execute(
+        `UPDATE menus SET is_deleted = TRUE, updated_by = ?, updated_at = NOW()
+         WHERE id = ?`,
+        [req.user.id, id]
+      );
+    }
+
+    // 5. 형제 메뉴들의 순서 재정렬
+    await connection.execute(
+      `UPDATE menus
+       SET sort_order = sort_order - 1
+       WHERE tenant_id = ? AND menu_type = ? AND parent_id <=> ? AND sort_order > ? AND is_deleted = FALSE`,
+      [req.tenantId, menu.menu_type, menu.parent_id, menu.sort_order]
+    );
+
+    // 6. 감사 로그
+    await connection.execute(
+      `INSERT INTO menu_audit_logs (menu_id, user_id, action, changes, created_at)
+       VALUES (?, ?, 'delete', ?, NOW())`,
+      [id, req.user.id, JSON.stringify({ force: force === 'true', childCount: children.length })]
+    );
+
+    await connection.commit();
+
+    res.json({
+      success: true,
+      message: force === 'true' && children.length > 0
+        ? `메뉴와 하위 ${children.length}개 메뉴가 삭제되었습니다.`
+        : '메뉴가 삭제되었습니다.'
+    });
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+```
+
+#### 라우터 등록 (필수)
+
+```javascript
+// routes/adminMenuRoutes.js
+router.post('/admin/menus', authenticateToken, isAdmin, validateCreateMenu, asyncHandler(createMenu));
+router.put('/admin/menus/:id', authenticateToken, isAdmin, validateMenuId, asyncHandler(updateMenu));
+router.delete('/admin/menus/:id', authenticateToken, isAdmin, validateMenuId, asyncHandler(deleteMenu));
+```
+
+#### Frontend API 클라이언트 (필수)
+
+```typescript
+// lib/api/menuApi.ts
+
+/**
+ * 메뉴 생성
+ */
+export async function createMenu(menuData: Partial<Menu>): Promise<Menu> {
+  const { data } = await api.post('/api/admin/menus', menuData);
+  return data.data;
+}
+
+/**
+ * 메뉴 수정
+ */
+export async function updateMenu(id: number, menuData: Partial<Menu>): Promise<Menu> {
+  const { data } = await api.put(`/api/admin/menus/${id}`, menuData);
+  return data.data;
+}
+
+/**
+ * 메뉴 삭제
+ */
+export async function deleteMenu(id: number, force: boolean = false): Promise<void> {
+  await api.delete(`/api/admin/menus/${id}?force=${force}`);
+}
+
+/**
+ * 메뉴 저장 (생성 또는 수정)
+ */
+export async function saveMenu(menu: Partial<Menu>): Promise<Menu> {
+  if (menu.id && menu.id > 0) {
+    return updateMenu(menu.id, menu);
+  } else {
+    return createMenu(menu);
+  }
+}
+```
+
 ---
 
 ## 인증/보안/오류 처리 (CRITICAL)
@@ -2077,85 +2487,507 @@ export function MenuTree({ onSelect, selectedId }: MenuTreeProps) {
 }
 ```
 
-### 상세 패널 (인라인 편집)
+### 상세 패널 (인라인 편집) - 완전한 구현 (MUST COPY)
+
+> **CRITICAL**: 아래 코드를 그대로 복사하여 사용하세요. 모든 필드가 포함되어 있습니다.
 
 ```tsx
 // components/admin/menu/MenuDetailPanel.tsx
+import { useState, useEffect } from 'react';
+import {
+  Paper, Typography, Grid, TextField, Button, Box,
+  FormControl, InputLabel, Select, MenuItem, Switch,
+  FormControlLabel, Collapse, Alert, Accordion, AccordionSummary,
+  AccordionDetails, Autocomplete, Chip, CircularProgress
+} from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { saveMenu, deleteMenu, fetchMenuTree } from '@/lib/api/menuApi';
+import { fetchUserGroups, fetchRoles } from '@/lib/api/commonApi';
+import type { Menu } from '@/types/menu';
+
 interface MenuDetailPanelProps {
   menu: Menu;
-  onSave: (menu: Menu) => Promise<void>;
-  onDelete: (id: number) => Promise<void>;
+  onSuccess: () => void;
+  onCancel: () => void;
 }
 
-export function MenuDetailPanel({ menu, onSave, onDelete }: MenuDetailPanelProps) {
-  const [formData, setFormData] = useState(menu);
+export function MenuDetailPanel({ menu, onSuccess, onCancel }: MenuDetailPanelProps) {
+  const queryClient = useQueryClient();
+  const [formData, setFormData] = useState<Partial<Menu>>(menu);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // 부모 메뉴 목록 조회
+  const { data: parentMenus = [] } = useQuery({
+    queryKey: ['parent-menus', formData.menu_type],
+    queryFn: () => fetchMenuTree(formData.menu_type || 'site'),
+    enabled: !!formData.menu_type,
+  });
+
+  // 사용자 그룹 목록
+  const { data: userGroups = [] } = useQuery({
+    queryKey: ['user-groups'],
+    queryFn: fetchUserGroups,
+  });
+
+  // 역할 목록
+  const { data: roles = [] } = useQuery({
+    queryKey: ['roles'],
+    queryFn: fetchRoles,
+  });
+
+  // 메뉴 저장
+  const saveMutation = useMutation({
+    mutationFn: (data: Partial<Menu>) => saveMenu(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-menus'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      setErrors({ submit: error.response?.data?.error || '저장에 실패했습니다.' });
+    },
+  });
+
+  // 메뉴 삭제
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteMenu(id, false),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-menus'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      setErrors({ submit: error.response?.data?.error || '삭제에 실패했습니다.' });
+    },
+  });
+
+  // 폼 초기화
+  useEffect(() => {
+    setFormData(menu);
+    setErrors({});
+    setShowDeleteConfirm(false);
+  }, [menu]);
+
+  // 필드 업데이트 핸들러
+  const handleChange = (field: keyof Menu, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  // 유효성 검사
+  const validate = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.menu_name?.trim()) {
+      newErrors.menu_name = '메뉴명을 입력하세요.';
+    }
+    if (!formData.menu_code?.trim()) {
+      newErrors.menu_code = '메뉴 코드를 입력하세요.';
+    } else if (!/^[a-z0-9_]+$/.test(formData.menu_code)) {
+      newErrors.menu_code = '영문 소문자, 숫자, 언더스코어만 사용 가능합니다.';
+    }
+    if (formData.link_type === 'url' && !formData.link_url?.trim()) {
+      newErrors.link_url = 'URL을 입력하세요.';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // 저장 핸들러
+  const handleSave = () => {
+    if (!validate()) return;
+    saveMutation.mutate(formData);
+  };
+
+  // 삭제 핸들러
+  const handleDelete = () => {
+    if (menu.id) {
+      deleteMutation.mutate(menu.id);
+    }
+  };
+
+  const isLoading = saveMutation.isPending || deleteMutation.isPending;
 
   return (
-    <Paper sx={{ p: 3 }}>
+    <Paper sx={{ p: 3, height: '100%', overflow: 'auto' }}>
+      {/* 헤더 */}
       <Typography variant="h6" gutterBottom>
         {menu.id ? '메뉴 수정' : '새 메뉴 추가'}
       </Typography>
 
-      <Grid container spacing={2}>
-        <Grid item xs={6}>
-          <TextField
-            label="메뉴명"
-            value={formData.menu_name}
-            onChange={(e) => setFormData({ ...formData, menu_name: e.target.value })}
-            fullWidth
-            required
-          />
-        </Grid>
-        <Grid item xs={6}>
-          <TextField
-            label="메뉴 코드"
-            value={formData.menu_code}
-            onChange={(e) => setFormData({ ...formData, menu_code: e.target.value })}
-            fullWidth
-            required
-            disabled={!!menu.id}  // 수정 시 코드 변경 불가
-          />
-        </Grid>
-        {/* ... 기타 필드들 */}
-      </Grid>
+      {/* 에러 메시지 */}
+      {errors.submit && (
+        <Alert severity="error" sx={{ mb: 2 }}>{errors.submit}</Alert>
+      )}
+
+      {/* 기본 정보 */}
+      <Accordion defaultExpanded>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography fontWeight={600}>기본 정보</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <TextField
+                label="메뉴명"
+                value={formData.menu_name || ''}
+                onChange={(e) => handleChange('menu_name', e.target.value)}
+                fullWidth
+                required
+                error={!!errors.menu_name}
+                helperText={errors.menu_name}
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                label="메뉴 코드"
+                value={formData.menu_code || ''}
+                onChange={(e) => handleChange('menu_code', e.target.value.toLowerCase())}
+                fullWidth
+                required
+                error={!!errors.menu_code}
+                helperText={errors.menu_code || '영문 소문자, 숫자, 언더스코어'}
+                disabled={!!menu.id}
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <FormControl fullWidth>
+                <InputLabel>상위 메뉴</InputLabel>
+                <Select
+                  value={formData.parent_id || ''}
+                  onChange={(e) => handleChange('parent_id', e.target.value || null)}
+                  label="상위 메뉴"
+                >
+                  <MenuItem value="">없음 (최상위)</MenuItem>
+                  {parentMenus
+                    .filter((m: any) => m.id !== menu.id)
+                    .map((m: any) => (
+                      <MenuItem key={m.id} value={m.id}>
+                        {'　'.repeat(m.depth || 0)}{m.text || m.menu_name}
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                label="아이콘"
+                value={formData.icon || ''}
+                onChange={(e) => handleChange('icon', e.target.value)}
+                fullWidth
+                placeholder="mdi-home, mdi-account 등"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="설명"
+                value={formData.description || ''}
+                onChange={(e) => handleChange('description', e.target.value)}
+                fullWidth
+                multiline
+                rows={2}
+              />
+            </Grid>
+          </Grid>
+        </AccordionDetails>
+      </Accordion>
+
+      {/* 링크 설정 */}
+      <Accordion defaultExpanded>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography fontWeight={600}>링크 설정</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <FormControl fullWidth>
+                <InputLabel>링크 타입</InputLabel>
+                <Select
+                  value={formData.link_type || 'url'}
+                  onChange={(e) => handleChange('link_type', e.target.value)}
+                  label="링크 타입"
+                >
+                  <MenuItem value="url">일반 URL</MenuItem>
+                  <MenuItem value="new_window">새 창</MenuItem>
+                  <MenuItem value="external">외부 링크</MenuItem>
+                  <MenuItem value="modal">모달</MenuItem>
+                  <MenuItem value="none">링크 없음</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                label="URL / 라우트"
+                value={formData.link_url || ''}
+                onChange={(e) => handleChange('link_url', e.target.value)}
+                fullWidth
+                error={!!errors.link_url}
+                helperText={errors.link_url}
+                placeholder="/about, /products"
+              />
+            </Grid>
+            {formData.link_type === 'external' && (
+              <Grid item xs={12}>
+                <TextField
+                  label="외부 URL"
+                  value={formData.external_url || ''}
+                  onChange={(e) => handleChange('external_url', e.target.value)}
+                  fullWidth
+                  placeholder="https://example.com"
+                />
+              </Grid>
+            )}
+            <Grid item xs={12}>
+              <TextField
+                label="가상 경로 (SEO)"
+                value={formData.virtual_path || ''}
+                onChange={(e) => handleChange('virtual_path', e.target.value)}
+                fullWidth
+                placeholder="/company/about"
+              />
+            </Grid>
+          </Grid>
+        </AccordionDetails>
+      </Accordion>
+
+      {/* 권한 설정 */}
+      <Accordion>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography fontWeight={600}>권한 설정</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <FormControl fullWidth>
+                <InputLabel>접근 권한</InputLabel>
+                <Select
+                  value={formData.permission_type || 'public'}
+                  onChange={(e) => handleChange('permission_type', e.target.value)}
+                  label="접근 권한"
+                >
+                  <MenuItem value="public">전체 공개</MenuItem>
+                  <MenuItem value="member">회원만</MenuItem>
+                  <MenuItem value="groups">특정 그룹</MenuItem>
+                  <MenuItem value="roles">특정 역할</MenuItem>
+                  <MenuItem value="admin">관리자만</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
+              <FormControl fullWidth>
+                <InputLabel>표시 조건</InputLabel>
+                <Select
+                  value={formData.show_condition || 'always'}
+                  onChange={(e) => handleChange('show_condition', e.target.value)}
+                  label="표시 조건"
+                >
+                  <MenuItem value="always">항상 표시</MenuItem>
+                  <MenuItem value="logged_in">로그인 시만</MenuItem>
+                  <MenuItem value="logged_out">로그아웃 시만</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+          </Grid>
+        </AccordionDetails>
+      </Accordion>
+
+      {/* 표시 설정 */}
+      <Accordion>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography fontWeight={600}>표시 설정</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Grid container spacing={2}>
+            <Grid item xs={4}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.is_visible !== false}
+                    onChange={(e) => handleChange('is_visible', e.target.checked)}
+                  />
+                }
+                label="메뉴 표시"
+              />
+            </Grid>
+            <Grid item xs={4}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.is_enabled !== false}
+                    onChange={(e) => handleChange('is_enabled', e.target.checked)}
+                  />
+                }
+                label="메뉴 활성화"
+              />
+            </Grid>
+            <Grid item xs={4}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.highlight === true}
+                    onChange={(e) => handleChange('highlight', e.target.checked)}
+                  />
+                }
+                label="강조 표시"
+              />
+            </Grid>
+            {formData.highlight && (
+              <>
+                <Grid item xs={6}>
+                  <TextField
+                    label="강조 텍스트"
+                    value={formData.highlight_text || ''}
+                    onChange={(e) => handleChange('highlight_text', e.target.value)}
+                    fullWidth
+                    placeholder="NEW, HOT"
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    label="강조 색상"
+                    value={formData.highlight_color || ''}
+                    onChange={(e) => handleChange('highlight_color', e.target.value)}
+                    fullWidth
+                    placeholder="#ff0000"
+                  />
+                </Grid>
+              </>
+            )}
+          </Grid>
+        </AccordionDetails>
+      </Accordion>
+
+      {/* SEO 설정 */}
+      <Accordion>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography fontWeight={600}>SEO 설정</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <TextField
+                label="SEO 제목"
+                value={formData.seo_title || ''}
+                onChange={(e) => handleChange('seo_title', e.target.value)}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="SEO 설명"
+                value={formData.seo_description || ''}
+                onChange={(e) => handleChange('seo_description', e.target.value)}
+                fullWidth
+                multiline
+                rows={2}
+              />
+            </Grid>
+          </Grid>
+        </AccordionDetails>
+      </Accordion>
 
       {/* 버튼 영역 */}
-      <Box sx={{ mt: 3, display: 'flex', gap: 1 }}>
-        <Button variant="contained" onClick={() => onSave(formData)}>
-          저장
+      <Box sx={{ mt: 3, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Button
+          variant="contained"
+          onClick={handleSave}
+          disabled={isLoading}
+          startIcon={isLoading ? <CircularProgress size={16} /> : null}
+        >
+          {isLoading ? '저장 중...' : '저장'}
         </Button>
+        <Button variant="outlined" onClick={onCancel} disabled={isLoading}>
+          취소
+        </Button>
+
         {menu.id && (
           <>
+            <Box sx={{ flex: 1 }} />
             <Button
               color="error"
               onClick={() => setShowDeleteConfirm(true)}
+              disabled={isLoading}
             >
               삭제
             </Button>
-
-            {/* 인라인 삭제 확인 (모달 아님) */}
-            <Collapse in={showDeleteConfirm}>
-              <Alert
-                severity="warning"
-                action={
-                  <>
-                    <Button size="small" onClick={() => onDelete(menu.id)}>
-                      확인
-                    </Button>
-                    <Button size="small" onClick={() => setShowDeleteConfirm(false)}>
-                      취소
-                    </Button>
-                  </>
-                }
-              >
-                정말 삭제하시겠습니까?
-              </Alert>
-            </Collapse>
           </>
         )}
       </Box>
+
+      {/* 인라인 삭제 확인 (모달 아님!) */}
+      <Collapse in={showDeleteConfirm}>
+        <Alert
+          severity="warning"
+          sx={{ mt: 2 }}
+          action={
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button size="small" color="inherit" onClick={handleDelete} disabled={isLoading}>
+                삭제 확인
+              </Button>
+              <Button size="small" color="inherit" onClick={() => setShowDeleteConfirm(false)}>
+                취소
+              </Button>
+            </Box>
+          }
+        >
+          정말 이 메뉴를 삭제하시겠습니까?
+        </Alert>
+      </Collapse>
     </Paper>
+  );
+}
+```
+
+### 메인 페이지 (트리 + 상세 패널 통합)
+
+```tsx
+// pages/admin/menus/index.tsx
+import { useState } from 'react';
+import { Box } from '@mui/material';
+import { MenuTree } from '@/components/admin/menu/MenuTree';
+import { MenuDetailPanel } from '@/components/admin/menu/MenuDetailPanel';
+import type { Menu } from '@/types/menu';
+
+export default function MenuManagementPage() {
+  const [selectedMenu, setSelectedMenu] = useState<Menu | null>(null);
+
+  const handleSuccess = () => {
+    setSelectedMenu(null);
+  };
+
+  const handleCancel = () => {
+    setSelectedMenu(null);
+  };
+
+  return (
+    <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+      {/* 좌측: 메뉴 트리 (280px) */}
+      <Box sx={{ width: 280, borderRight: 1, borderColor: 'divider', overflow: 'hidden' }}>
+        <MenuTree
+          onSelect={setSelectedMenu}
+          selectedId={selectedMenu?.id}
+        />
+      </Box>
+
+      {/* 우측: 상세 패널 */}
+      <Box sx={{ flex: 1, overflow: 'hidden' }}>
+        {selectedMenu ? (
+          <MenuDetailPanel
+            menu={selectedMenu}
+            onSuccess={handleSuccess}
+            onCancel={handleCancel}
+          />
+        ) : (
+          <Box sx={{ p: 4, textAlign: 'center', color: 'text.secondary' }}>
+            좌측 트리에서 메뉴를 선택하거나<br />
+            "새 메뉴 추가" 버튼을 클릭하세요.
+          </Box>
+        )}
+      </Box>
+    </Box>
   );
 }
 ```
