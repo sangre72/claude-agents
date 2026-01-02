@@ -75,25 +75,28 @@ grep -E "mysql|postgres|mongodb" package.json requirements.txt 2>/dev/null
 
 ## 사용 가능한 Agents
 
-### 필수 (먼저 실행)
+### 최우선 (순서대로 실행)
 
-| 에이전트 | 설명 | 사용법 |
-|----------|------|--------|
-| `shared-schema` | 공유 테이블 초기화 | `Use shared-schema --init` |
+| 순서 | 에이전트 | 설명 | 사용법 |
+|------|----------|------|--------|
+| 1 | `shared-schema` | 공유 테이블 초기화 | `Use shared-schema --init` |
+| 2 | `tenant-manager` | 테넌트(멀티사이트) 관리 | `Use tenant-manager --init` |
+| 3 | `category-manager` | 카테고리 관리 | `Use category-manager --init` |
+| 4 | `menu-manager` | 통합 메뉴 관리 | `Use menu-manager --init` |
 
 ### 게시판
 
 | 에이전트 | 설명 | 사용법 |
 |----------|------|--------|
-| `board-generator` | 멀티게시판 생성 | `Use board-generator --init` |
+| `board-generator` | 멀티게시판 오케스트레이터 | `Use board-generator --init` |
+| `board-schema` | DB 스키마 정의 (공유) | 참조용 |
+| `board-templates` | 템플릿 정의 (공유) | 참조용 |
+| `board-frontend-pages` | 페이지 템플릿 (공유) | 참조용 |
+| `board-attachments` | 파일 첨부 기능 (공유) | 참조용 |
 
 **템플릿**: notice, free, qna, gallery, faq, review
 
 ### 메뉴 관리
-
-| 에이전트 | 설명 | 사용법 |
-|----------|------|--------|
-| `menu-manager` | 통합 메뉴 관리 | `Use menu-manager --init` |
 
 **타입**: site, user, admin, header_utility, footer_utility
 
@@ -102,18 +105,24 @@ grep -E "mysql|postgres|mongodb" package.json requirements.txt 2>/dev/null
 ## 초기화 순서
 
 \`\`\`bash
-# 1. 공유 스키마 (필수)
+# 1. 공유 스키마 (필수 - 가장 먼저)
 Use shared-schema --init
 
-# 2. 게시판 시스템
-Use board-generator --init
-Use board-generator --template notice
-Use board-generator --template free
+# 2. 테넌트 관리 (최우선)
+Use tenant-manager --init
 
-# 3. 메뉴 관리
+# 3. 카테고리 관리 (최우선)
+Use category-manager --init
+
+# 4. 메뉴 관리 (최우선)
 Use menu-manager --init
 Use menu-manager --type=site
 Use menu-manager --type=admin
+
+# 5. 게시판 시스템
+Use board-generator --init
+Use board-generator --template notice
+Use board-generator --template free
 \`\`\`
 
 ---
@@ -179,15 +188,16 @@ fi
   ✓ CLAUDE.md - 프로젝트 가이드
 
 사용 가능한 기능:
-  - Agents: shared-schema, board-generator, menu-manager
-  - Skills: coding-guide, gitpush, gitpull, refactor
+  - Agents: shared-schema, tenant-manager, category-manager, menu-manager, board-generator
+  - Skills: coding-guide, gitpush, gitpull, refactor, modular-check
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 다음 단계:
   1. CLAUDE.md 내용 확인 및 필요시 수정
   2. Use shared-schema --init (공유 테이블 초기화)
-  3. 필요한 기능 초기화 (board-generator, menu-manager)
+  3. Use tenant-manager --init (테넌트 관리)
+  4. 필요한 기능 초기화 (category-manager, menu-manager, board-generator)
 ```
 
 ---
@@ -230,9 +240,23 @@ frontend/
 ## 참고
 
 이 에이전트는 다음 파일들을 참조합니다:
+
+**최우선 에이전트:**
 - `~/.claude/agents/shared-schema.md`
-- `~/.claude/agents/board-generator.md`
+- `~/.claude/agents/tenant-manager.md`
+- `~/.claude/agents/category-manager.md`
 - `~/.claude/agents/menu-manager.md`
+
+**게시판 에이전트:**
+- `~/.claude/agents/board-generator.md` (오케스트레이터)
+- `~/.claude/agents/board-schema.md` (DB 스키마)
+- `~/.claude/agents/board-templates.md` (템플릿 정의)
+- `~/.claude/agents/board-frontend-pages.md` (페이지 템플릿)
+- `~/.claude/agents/board-attachments.md` (파일 첨부)
+
+**스킬:**
 - `~/.claude/skills/coding-guide/`
 - `~/.claude/skills/gitpush/`
 - `~/.claude/skills/gitpull/`
+- `~/.claude/skills/refactor/`
+- `~/.claude/skills/modular-check/`
