@@ -339,6 +339,470 @@ head -100 frontend/src/components/**/*.tsx
 
 ---
 
+## Next.js App Router 페이지 템플릿
+
+### 게시판 목록 페이지 (`app/boards/[boardCode]/page.tsx`)
+
+```tsx
+'use client';
+
+import { useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import {
+  Box,
+  Container,
+  Paper,
+  Typography,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Chip,
+  CircularProgress,
+  Alert,
+  Pagination,
+  TextField,
+  InputAdornment,
+} from '@mui/material';
+import {
+  Search,
+  Visibility,
+  Announcement,
+  ExpandMore,
+  QuestionAnswer,
+} from '@mui/icons-material';
+
+import Header from '@/components/common/Header';
+import Footer from '@/components/common/Footer';
+import Breadcrumb from '@/components/common/Breadcrumb';
+import { useBoard, usePosts } from '@/hooks';
+
+export default function BoardPage() {
+  const params = useParams();
+  const router = useRouter();
+  const boardCode = params.boardCode as string;
+
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+
+  const { data: board, isLoading: boardLoading, error: boardError } = useBoard(boardCode);
+  const { data: postsData, isLoading: postsLoading } = usePosts(boardCode, {
+    page,
+    limit: 20,
+    search,
+  });
+
+  const posts = postsData?.items || [];
+  const totalPages = postsData?.totalPages || 1;
+
+  // 브레드크럼 아이템 (홈은 Breadcrumb 컴포넌트에서 자동 추가됨)
+  const breadcrumbItems = [{ label: board?.name || '게시판' }];
+
+  if (boardLoading) {
+    return (
+      <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
+        <Header />
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+            <CircularProgress />
+          </Box>
+        </Container>
+        <Footer />
+      </Box>
+    );
+  }
+
+  if (boardError || !board) {
+    return (
+      <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
+        <Header />
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+          <Breadcrumb items={[{ label: '게시판' }]} />
+          <Alert severity="error" sx={{ mt: 2 }}>게시판을 찾을 수 없습니다.</Alert>
+        </Container>
+        <Footer />
+      </Box>
+    );
+  }
+
+  // FAQ 게시판인 경우 카드 스타일로 표시
+  if (boardCode === 'faq') {
+    return (
+      <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
+        <Header />
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+          <Breadcrumb items={breadcrumbItems} />
+          <Box sx={{ mb: 4, mt: 2 }}>
+            <Typography variant="h4" fontWeight={700} gutterBottom>
+              {board.name}
+            </Typography>
+            {board.description && (
+              <Typography variant="body1" color="text.secondary">
+                {board.description}
+              </Typography>
+            )}
+          </Box>
+          {/* 검색 */}
+          <Box sx={{ mb: 3 }}>
+            <TextField
+              fullWidth
+              placeholder="궁금한 내용을 검색해보세요"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ maxWidth: 400 }}
+            />
+          </Box>
+          {postsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : posts.length === 0 ? (
+            <Paper sx={{ p: 6, textAlign: 'center' }}>
+              <QuestionAnswer sx={{ fontSize: 48, color: 'text.disabled', mb: 2 }} />
+              <Typography variant="h6" color="text.secondary">
+                등록된 FAQ가 없습니다.
+              </Typography>
+            </Paper>
+          ) : (
+            <Box>
+              {posts.map((post) => (
+                <Paper
+                  key={post.id}
+                  sx={{
+                    mb: 1,
+                    p: 2,
+                    cursor: 'pointer',
+                    '&:hover': { bgcolor: 'action.hover' },
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                  }}
+                  onClick={() => router.push(`/boards/${boardCode}/${post.id}`)}
+                >
+                  <QuestionAnswer sx={{ color: 'primary.main', fontSize: 20 }} />
+                  <Box sx={{ flex: 1 }}>
+                    <Typography fontWeight={500}>{post.title}</Typography>
+                    {post.categoryName && (
+                      <Typography variant="caption" color="text.secondary">
+                        {post.categoryName}
+                      </Typography>
+                    )}
+                  </Box>
+                  <ExpandMore sx={{ color: 'text.disabled' }} />
+                </Paper>
+              ))}
+              {totalPages > 1 && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+                  <Pagination
+                    count={totalPages}
+                    page={page}
+                    onChange={(_, value) => setPage(value)}
+                    color="primary"
+                  />
+                </Box>
+              )}
+            </Box>
+          )}
+        </Container>
+        <Footer />
+      </Box>
+    );
+  }
+
+  // 일반 게시판 (공지사항 등) - 테이블 형태
+  return (
+    <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
+      <Header />
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Breadcrumb items={breadcrumbItems} />
+        <Box sx={{ mb: 4, mt: 2 }}>
+          <Typography variant="h4" fontWeight={700} gutterBottom>
+            {board.name}
+          </Typography>
+          {board.description && (
+            <Typography variant="body1" color="text.secondary">
+              {board.description}
+            </Typography>
+          )}
+        </Box>
+        {/* 검색 */}
+        <Box sx={{ mb: 3 }}>
+          <TextField
+            placeholder="검색어를 입력하세요"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            size="small"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search />
+                </InputAdornment>
+              ),
+            }}
+            sx={{ minWidth: 300 }}
+          />
+        </Box>
+        {/* 게시글 목록 */}
+        <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
+          <Table>
+            <TableHead sx={{ bgcolor: '#F8FAFC' }}>
+              <TableRow>
+                <TableCell width="60" align="center">번호</TableCell>
+                <TableCell>제목</TableCell>
+                <TableCell width="120" align="center">작성자</TableCell>
+                <TableCell width="120" align="center">작성일</TableCell>
+                <TableCell width="80" align="center">조회수</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {postsLoading ? (
+                <TableRow>
+                  <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                    <CircularProgress size={32} />
+                  </TableCell>
+                </TableRow>
+              ) : posts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                    <Typography color="text.secondary">등록된 게시글이 없습니다.</Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                posts.map((post, index) => (
+                  <TableRow
+                    key={post.id}
+                    hover
+                    sx={{
+                      cursor: 'pointer',
+                      bgcolor: post.isNotice ? 'rgba(33, 150, 243, 0.04)' : 'inherit',
+                    }}
+                    onClick={() => router.push(`/boards/${boardCode}/${post.id}`)}
+                  >
+                    <TableCell align="center">
+                      {post.isNotice ? (
+                        <Chip icon={<Announcement sx={{ fontSize: 14 }} />} label="공지" size="small" color="primary" variant="outlined" />
+                      ) : (
+                        (page - 1) * 20 + index + 1
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography sx={{ fontWeight: post.isNotice ? 600 : 400, color: post.isNotice ? 'primary.main' : 'inherit' }}>
+                          {post.title}
+                        </Typography>
+                        {post.commentCount > 0 && (
+                          <Typography variant="caption" color="primary.main">[{post.commentCount}]</Typography>
+                        )}
+                      </Box>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Typography variant="body2">{post.authorName || '관리자'}</Typography>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Typography variant="body2" color="text.secondary">
+                        {new Date(post.createdAt).toLocaleDateString('ko-KR')}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                        <Visibility sx={{ fontSize: 14, color: 'text.disabled' }} />
+                        <Typography variant="body2" color="text.secondary">{post.viewCount}</Typography>
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {totalPages > 1 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+            <Pagination count={totalPages} page={page} onChange={(_, value) => setPage(value)} color="primary" />
+          </Box>
+        )}
+      </Container>
+      <Footer />
+    </Box>
+  );
+}
+```
+
+### 게시글 상세 페이지 (`app/boards/[boardCode]/[postId]/page.tsx`)
+
+```tsx
+'use client';
+
+import { useParams, useRouter } from 'next/navigation';
+import {
+  Box, Container, Paper, Typography, Button, CircularProgress, Alert,
+  Divider, Chip, IconButton,
+} from '@mui/material';
+import {
+  ArrowBack, Visibility, CalendarToday, Person, Announcement, AttachFile, Download,
+} from '@mui/icons-material';
+
+import Header from '@/components/common/Header';
+import Footer from '@/components/common/Footer';
+import Breadcrumb from '@/components/common/Breadcrumb';
+import { useBoard, usePost } from '@/hooks';
+
+export default function PostDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const boardCode = params.boardCode as string;
+  const postId = params.postId as string;
+
+  const { data: board, isLoading: boardLoading } = useBoard(boardCode);
+  const { data: post, isLoading: postLoading, error: postError } = usePost(boardCode, postId);
+
+  // 브레드크럼 아이템 (홈은 Breadcrumb 컴포넌트에서 자동 추가됨)
+  const breadcrumbItems = [
+    { label: board?.name || '게시판', href: `/boards/${boardCode}` },
+    { label: post?.title || '게시글' },
+  ];
+
+  if (boardLoading || postLoading) {
+    return (
+      <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
+        <Header />
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+            <CircularProgress />
+          </Box>
+        </Container>
+        <Footer />
+      </Box>
+    );
+  }
+
+  if (postError || !post) {
+    return (
+      <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
+        <Header />
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+          <Breadcrumb items={[{ label: board?.name || '게시판', href: `/boards/${boardCode}` }, { label: '게시글' }]} />
+          <Alert severity="error" sx={{ mt: 2 }}>게시글을 찾을 수 없습니다.</Alert>
+          <Button startIcon={<ArrowBack />} onClick={() => router.push(`/boards/${boardCode}`)} sx={{ mt: 2 }}>
+            목록으로
+          </Button>
+        </Container>
+        <Footer />
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
+      <Header />
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Breadcrumb items={breadcrumbItems} />
+        <Box sx={{ mb: 3, mt: 2 }}>
+          <Button startIcon={<ArrowBack />} onClick={() => router.push(`/boards/${boardCode}`)} sx={{ mb: 2 }}>
+            {board?.name || '목록'}으로
+          </Button>
+        </Box>
+        <Paper sx={{ borderRadius: 2, overflow: 'hidden' }}>
+          {/* 제목 영역 */}
+          <Box sx={{ p: 3, bgcolor: '#F8FAFC', borderBottom: '1px solid #E5E7EB' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              {post.isNotice && (
+                <Chip icon={<Announcement sx={{ fontSize: 14 }} />} label="공지" size="small" color="primary" />
+              )}
+              <Typography variant="h5" fontWeight={600}>{post.title}</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', color: 'text.secondary' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Person sx={{ fontSize: 16 }} />
+                <Typography variant="body2">{post.authorName || '관리자'}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <CalendarToday sx={{ fontSize: 16 }} />
+                <Typography variant="body2">{new Date(post.createdAt).toLocaleString('ko-KR')}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Visibility sx={{ fontSize: 16 }} />
+                <Typography variant="body2">조회 {post.viewCount}</Typography>
+              </Box>
+            </Box>
+          </Box>
+          {/* 본문 */}
+          <Box sx={{ p: 4, minHeight: 300 }}>
+            <Typography
+              component="div"
+              sx={{ lineHeight: 1.8, '& p': { mb: 2 }, '& img': { maxWidth: '100%', height: 'auto' } }}
+              dangerouslySetInnerHTML={{ __html: post.content }}
+            />
+          </Box>
+          {/* 첨부파일 */}
+          {post.attachments && post.attachments.length > 0 && (
+            <>
+              <Divider />
+              <Box sx={{ p: 3, bgcolor: '#FAFAFA' }}>
+                <Typography variant="subtitle2" sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <AttachFile sx={{ fontSize: 18 }} />
+                  첨부파일 ({post.attachments.length})
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {post.attachments.map((file) => (
+                    <Box
+                      key={file.id}
+                      sx={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        p: 1.5, bgcolor: 'white', borderRadius: 1, border: '1px solid #E5E7EB',
+                      }}
+                    >
+                      <Typography variant="body2">{file.originalName}</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {(file.fileSize / 1024).toFixed(1)} KB
+                        </Typography>
+                        <IconButton size="small" color="primary"><Download fontSize="small" /></IconButton>
+                      </Box>
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
+            </>
+          )}
+        </Paper>
+        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+          <Button variant="outlined" startIcon={<ArrowBack />} onClick={() => router.push(`/boards/${boardCode}`)}>
+            목록으로
+          </Button>
+        </Box>
+      </Container>
+      <Footer />
+    </Box>
+  );
+}
+```
+
+---
+
+## 레이아웃 필수 요소 (CRITICAL)
+
+> **모든 페이지에 반드시 포함되어야 하는 요소**
+
+1. **Header**: 페이지 상단에 `<Header />` 컴포넌트
+2. **Footer**: 페이지 하단에 `<Footer />` 컴포넌트
+3. **Breadcrumb**: 네비게이션 경로 표시
+   - `items` 배열에 홈을 **포함하지 않음** (Breadcrumb 컴포넌트가 자동 추가)
+   - 예: `[{ label: '게시판명' }]` 또는 `[{ label: '게시판명', href: '/boards/code' }, { label: '게시글 제목' }]`
+4. **Container**: MUI Container로 컨텐츠 영역 감싸기
+5. **배경색**: `bgcolor: 'background.default'`
+6. **최소 높이**: `minHeight: '100vh'`
+
+---
+
 ## 완료 조건
 
 1. 기술 스택 분석 완료
@@ -349,6 +813,6 @@ head -100 frontend/src/components/**/*.tsx
 6. CommentList 컴포넌트 생성됨
 7. index 파일 생성됨
 8. Hooks/Composables 생성됨
-9. 페이지 컴포넌트 생성됨
+9. 페이지 컴포넌트 생성됨 (Header, Footer, Breadcrumb 포함)
 10. 라우터에 경로 등록됨
 11. 기존 코드 패턴과 일관성 유지됨

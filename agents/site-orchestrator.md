@@ -344,6 +344,10 @@ test_account:
 |----------|------|------|
 | site-orchestrator | `site-orchestrator.md` | 사이트 전체 지휘자 |
 | board-generator | `board-generator.md` | 게시판 생성 오케스트레이터 |
+| board-schema | `board-schema.md` | DB 스키마 정의 (공유) |
+| board-templates | `board-templates.md` | 템플릿 정의 (공유) |
+| board-frontend-pages | `board-frontend-pages.md` | Frontend 페이지 템플릿 (공유) |
+| board-attachments | `board-attachments.md` | 파일 첨부 기능 (공유) |
 | board-shared | `board-shared.md` | 공유 모듈 생성 |
 | board-backend-model | `board-backend-model.md` | Backend 모델/스키마 |
 | board-backend-api | `board-backend-api.md` | Backend API |
