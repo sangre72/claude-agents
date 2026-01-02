@@ -2108,6 +2108,8 @@ import FolderIcon from '@mui/icons-material/Folder';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import DescriptionIcon from '@mui/icons-material/Description';
 import AddIcon from '@mui/icons-material/Add';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { reorderMenus, moveMenu, fetchMenuTree } from '@/lib/api/menuApi';
 import type { Menu, MenuTreeNode } from '@/types/menu';
 
@@ -2199,7 +2201,7 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
     [treeData, menuType, reorderMutation, moveMutation]
   );
 
-  // 트리 노드 렌더링
+  // 트리 노드 렌더링 (Windows Explorer 스타일)
   const renderNode = useCallback(
     (node: NodeModel<Menu>, { depth, isOpen, onToggle }: { depth: number; isOpen: boolean; onToggle: () => void }) => {
       const hasChildren = treeData.some((n) => n.parent === node.id);
@@ -2207,73 +2209,202 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
 
       return (
         <Box
-          onClick={() => onSelect(node.data ?? null, false)}  // 수정 모드
+          onClick={() => onSelect(node.data ?? null, false)}
           sx={{
             display: 'flex',
             alignItems: 'center',
-            py: 0.5,
-            px: 1,
-            ml: depth * 2,
+            height: 28,
             cursor: 'pointer',
-            borderRadius: 1,
-            bgcolor: isSelected ? 'primary.light' : 'transparent',
-            '&:hover': { bgcolor: isSelected ? 'primary.light' : 'action.hover' },
+            userSelect: 'none',
+            // Explorer 스타일: 선택 시 연한 파란색 배경 + 테두리
+            bgcolor: isSelected ? '#cce8ff' : 'transparent',
+            border: isSelected ? '1px solid #99d1ff' : '1px solid transparent',
+            borderRadius: 0.5,
+            '&:hover': {
+              bgcolor: isSelected ? '#cce8ff' : '#e5f3ff',
+              border: isSelected ? '1px solid #99d1ff' : '1px solid #cce8ff',
+            },
+            // 들여쓰기 (depth * 20px)
+            pl: `${depth * 20 + 4}px`,
+            pr: 1,
           }}
         >
-          {/* 펼침/접힘 아이콘 */}
+          {/* 트리 가이드 라인 (Explorer 스타일) */}
+          {depth > 0 && (
+            <Box
+              sx={{
+                position: 'absolute',
+                left: `${(depth - 1) * 20 + 14}px`,
+                top: 0,
+                bottom: 0,
+                width: 1,
+                bgcolor: '#e0e0e0',
+              }}
+            />
+          )}
+
+          {/* 펼침/접힘 화살표 (Explorer 스타일: ▶ / ▼) */}
           <Box
-            onClick={(e) => { e.stopPropagation(); onToggle(); }}
-            sx={{ mr: 0.5, display: 'flex', cursor: 'pointer' }}
+            onClick={(e) => { e.stopPropagation(); hasChildren && onToggle(); }}
+            sx={{
+              width: 16,
+              height: 16,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              mr: 0.5,
+              cursor: hasChildren ? 'pointer' : 'default',
+              color: '#666',
+              fontSize: 10,
+              '&:hover': hasChildren ? { color: '#333' } : {},
+            }}
           >
+            {hasChildren && (
+              isOpen ? <ExpandMoreIcon sx={{ fontSize: 16 }} /> : <ChevronRightIcon sx={{ fontSize: 16 }} />
+            )}
+          </Box>
+
+          {/* 폴더/파일 아이콘 (Explorer 스타일) */}
+          <Box sx={{ mr: 0.75, display: 'flex', alignItems: 'center' }}>
             {hasChildren ? (
-              isOpen ? <FolderOpenIcon color="primary" /> : <FolderIcon color="primary" />
+              isOpen ? (
+                <FolderOpenIcon sx={{ fontSize: 18, color: '#f4c542' }} />  // 노란색 열린 폴더
+              ) : (
+                <FolderIcon sx={{ fontSize: 18, color: '#f4c542' }} />      // 노란색 닫힌 폴더
+              )
             ) : (
-              <DescriptionIcon color="action" />
+              <DescriptionIcon sx={{ fontSize: 18, color: '#90caf9' }} />   // 파란색 문서
             )}
           </Box>
 
           {/* 메뉴명 */}
           <Typography
             variant="body2"
-            sx={{ fontWeight: isSelected ? 600 : 400, color: isSelected ? 'primary.main' : 'text.primary' }}
+            sx={{
+              fontSize: 13,
+              fontWeight: isSelected ? 500 : 400,
+              color: '#333',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
           >
             {node.text}
           </Typography>
+
+          {/* 뱃지: 하위 메뉴 개수 */}
+          {hasChildren && (
+            <Typography
+              variant="caption"
+              sx={{ ml: 1, color: '#999', fontSize: 11 }}
+            >
+              ({treeData.filter(n => n.parent === node.id).length})
+            </Typography>
+          )}
         </Box>
       );
     },
     [treeData, selectedId, onSelect]
   );
 
-  // 드래그 프리뷰
+  // 드래그 프리뷰 (Explorer 스타일)
   const dragPreviewRender = (monitorProps: DragLayerMonitorProps<Menu>) => (
-    <Box sx={{ p: 1, bgcolor: 'background.paper', borderRadius: 1, boxShadow: 2 }}>
-      <Typography variant="body2">{monitorProps.item.text}</Typography>
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        p: 0.75,
+        bgcolor: '#fff',
+        border: '1px solid #cce8ff',
+        borderRadius: 0.5,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+      }}
+    >
+      <FolderIcon sx={{ fontSize: 16, color: '#f4c542', mr: 0.75 }} />
+      <Typography variant="body2" sx={{ fontSize: 13 }}>{monitorProps.item.text}</Typography>
     </Box>
   );
 
-  if (isLoading) return <CircularProgress />;
-  if (error) return <Typography color="error">메뉴 로딩 실패</Typography>;
+  if (isLoading) return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+      <CircularProgress size={24} />
+    </Box>
+  );
+  if (error) return (
+    <Box sx={{ p: 2, color: 'error.main', fontSize: 13 }}>
+      메뉴를 불러올 수 없습니다.
+    </Box>
+  );
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 메뉴 타입 탭 */}
+    <Box
+      sx={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        bgcolor: '#fff',
+        borderRight: '1px solid #e0e0e0',
+      }}
+    >
+      {/* 헤더: Explorer 스타일 */}
+      <Box
+        sx={{
+          px: 1.5,
+          py: 1,
+          borderBottom: '1px solid #e0e0e0',
+          bgcolor: '#fafafa',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+        }}
+      >
+        <FolderIcon sx={{ fontSize: 18, color: '#f4c542' }} />
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: '#333' }}>
+          메뉴 관리
+        </Typography>
+      </Box>
+
+      {/* 메뉴 타입 탭 (Explorer 탭 스타일) */}
       <Tabs
         value={menuType}
         onChange={(_, v) => {
           setMenuType(v);
-          onSelect(null, false);         // 메뉴 선택 해제
-          onMenuTypeChange?.(v);          // 상위 컴포넌트에 메뉴 타입 알림
+          onSelect(null, false);
+          onMenuTypeChange?.(v);
         }}
-        sx={{ borderBottom: 1, borderColor: 'divider' }}
+        sx={{
+          minHeight: 32,
+          borderBottom: '1px solid #e0e0e0',
+          '& .MuiTab-root': {
+            minHeight: 32,
+            fontSize: 12,
+            textTransform: 'none',
+            px: 2,
+          },
+          '& .Mui-selected': {
+            bgcolor: '#fff',
+            borderBottom: '2px solid #1976d2',
+          },
+        }}
       >
         <Tab label="사이트" value="site" />
         <Tab label="사용자" value="user" />
         <Tab label="관리자" value="admin" />
       </Tabs>
 
-      {/* 드래그앤드롭 트리 */}
-      <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
+      {/* 트리 영역 (Explorer 스타일) */}
+      <Box
+        sx={{
+          flex: 1,
+          overflow: 'auto',
+          py: 0.5,
+          // 스크롤바 스타일 (Windows 스타일)
+          '&::-webkit-scrollbar': { width: 8 },
+          '&::-webkit-scrollbar-track': { bgcolor: '#f5f5f5' },
+          '&::-webkit-scrollbar-thumb': { bgcolor: '#c1c1c1', borderRadius: 4 },
+          '&::-webkit-scrollbar-thumb:hover': { bgcolor: '#a8a8a8' },
+        }}
+      >
         <DndProvider backend={HTML5Backend}>
           <Tree
             tree={treeData}
@@ -2283,12 +2414,8 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
             dragPreviewRender={dragPreviewRender}
             sort={false}
             insertDroppableFirst={false}
-            // CRITICAL: canDrop - 자기 자신 및 하위 노드로 드롭 금지
-            canDrop={(tree, { dragSource, dropTargetId, dropTarget }) => {
-              // 자기 자신으로 드롭 금지
+            canDrop={(tree, { dragSource, dropTargetId }) => {
               if (dragSource?.id === dropTargetId) return false;
-
-              // 자신의 하위 노드로 드롭 금지 (순환 참조 방지)
               const isDescendant = (parentId: number | string, childId: number | string): boolean => {
                 const children = tree.filter(node => node.parent === parentId);
                 for (const child of children) {
@@ -2298,27 +2425,51 @@ export function MenuTree({ onSelect, onMenuTypeChange, selectedId }: MenuTreePro
                 return false;
               };
               if (dragSource && isDescendant(dragSource.id, dropTargetId)) return false;
-
               return true;
             }}
-            // CRITICAL: dropTargetOffset - 노드 위에 호버하면 자식으로 드롭
-            // 10px 영역 안에 호버하면 "안으로 드롭" (자식으로 만들기)
             dropTargetOffset={10}
-            // 초기 열림 상태 (전체 열기)
             initialOpen={true}
+            // 드롭 placeholder (Explorer 스타일 - 파란색 선)
             placeholderRender={(node, { depth }) => (
-              <Box sx={{ ml: depth * 2, height: 2, bgcolor: 'primary.main', borderRadius: 1 }} />
+              <Box
+                sx={{
+                  ml: `${depth * 20 + 24}px`,
+                  height: 2,
+                  bgcolor: '#1976d2',
+                  borderRadius: 1,
+                  my: 0.25,
+                }}
+              />
             )}
           />
         </DndProvider>
+
+        {/* 빈 상태 */}
+        {treeData.length === 0 && (
+          <Box sx={{ p: 2, textAlign: 'center', color: '#999', fontSize: 13 }}>
+            메뉴가 없습니다.
+          </Box>
+        )}
       </Box>
 
-      {/* 새 메뉴 추가 버튼 - CRITICAL: isNewMenu = true 전달 */}
-      <Button
-        startIcon={<AddIcon />}
-        onClick={() => onSelect({ menu_type: menuType } as Menu, true)}
-        sx={{ m: 2 }}
-        variant="outlined"
+      {/* 하단: 새 메뉴 추가 버튼 (Explorer 스타일) */}
+      <Box sx={{ p: 1, borderTop: '1px solid #e0e0e0', bgcolor: '#fafafa' }}>
+        <Button
+          fullWidth
+          startIcon={<AddIcon sx={{ fontSize: 16 }} />}
+          onClick={() => onSelect({ menu_type: menuType } as Menu, true)}
+          sx={{
+            justifyContent: 'flex-start',
+            textTransform: 'none',
+            fontSize: 13,
+            color: '#333',
+            bgcolor: '#fff',
+            border: '1px solid #ddd',
+            '&:hover': {
+              bgcolor: '#e5f3ff',
+              borderColor: '#cce8ff',
+            },
+          }}
       >
         새 메뉴 추가
       </Button>
