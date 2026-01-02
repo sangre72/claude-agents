@@ -57,7 +57,11 @@ Use tenant-manager --list
 
 ---
 
-## Phase 0: 기술 스택 감지
+## Phase 0: 사전 검증 (CRITICAL)
+
+> **중요**: tenants 테이블이 없으면 API가 실행되지 않습니다!
+
+### Step 1: 기술 스택 감지
 
 ```bash
 # Backend 확인
@@ -67,11 +71,71 @@ ls package.json requirements.txt pom.xml 2>/dev/null
 grep -E "mysql|postgres|mongodb" package.json requirements.txt 2>/dev/null
 ```
 
+### Step 2: tenants 테이블 존재 확인
+
+```sql
+-- MySQL/MariaDB
+SELECT COUNT(*) FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenants';
+```
+
+**결과가 0이면:**
+```
+⚠️ tenants 테이블이 존재하지 않습니다!
+🔧 shared-schema를 먼저 실행해야 합니다.
+
+Use shared-schema --init
+```
+
+### Step 3: API 시작 전 테이블 확인 미들웨어
+
+```javascript
+// middleware/checkTenantTable.js
+const { pool } = require('../db');
+
+const checkTenantTableExists = async (req, res, next) => {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT COUNT(*) as cnt FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenants'
+    `);
+
+    if (rows[0].cnt === 0) {
+      return res.status(500).json({
+        error: 'tenants 테이블이 존재하지 않습니다.',
+        solution: 'shared-schema를 먼저 실행하세요: Use shared-schema --init'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('테이블 확인 오류:', error);
+    res.status(500).json({ error: '데이터베이스 연결 오류' });
+  }
+};
+
+module.exports = { checkTenantTableExists };
+```
+
+### Step 4: 라우터에 미들웨어 적용
+
+```javascript
+// api/tenants.js
+const { checkTenantTableExists } = require('../middleware/checkTenantTable');
+
+// 모든 테넌트 API에 테이블 확인 미들웨어 적용
+router.use(checkTenantTableExists);
+
+// 또는 개별 라우트에 적용
+router.get('/', checkTenantTableExists, async (req, res) => { ... });
+```
+
 ---
 
 ## Phase 1: DB 스키마 (shared-schema에서 생성됨)
 
 > **참고**: tenants 테이블은 `shared-schema`에서 이미 생성됩니다.
+> **테이블이 없으면**: `Use shared-schema --init` 먼저 실행!
 
 ```sql
 -- shared-schema에서 생성되는 테이블

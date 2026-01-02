@@ -64,7 +64,11 @@ Use category-manager --list --board=notice
 
 ---
 
-## Phase 0: 기술 스택 감지
+## Phase 0: 사전 검증 (CRITICAL)
+
+> **중요**: categories 테이블은 tenants와 boards 테이블에 의존합니다!
+
+### Step 1: 기술 스택 감지
 
 ```bash
 # Backend 확인
@@ -74,9 +78,90 @@ ls package.json requirements.txt pom.xml 2>/dev/null
 grep -E "mysql|postgres|mongodb" package.json requirements.txt 2>/dev/null
 ```
 
+### Step 2: 의존 테이블 존재 확인
+
+```sql
+-- MySQL/MariaDB: tenants, boards 테이블 확인
+SELECT TABLE_NAME FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME IN ('tenants', 'boards');
+```
+
+**결과가 2개 미만이면:**
+```
+⚠️ 필수 테이블이 존재하지 않습니다!
+
+누락된 테이블에 따라:
+- tenants 없음 → Use shared-schema --init
+- boards 없음 → Use board-generator --init
+
+초기화 순서:
+1. Use shared-schema --init     # tenants 테이블 생성
+2. Use tenant-manager --init    # 테넌트 관리 (선택)
+3. Use board-generator --init   # boards 테이블 생성
+4. Use category-manager --init  # 카테고리 관리
+```
+
+### Step 3: API 시작 전 테이블 확인 미들웨어
+
+```javascript
+// middleware/checkCategoryTables.js
+const { pool } = require('../db');
+
+const checkCategoryTablesExist = async (req, res, next) => {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT TABLE_NAME FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME IN ('tenants', 'boards', 'categories')
+    `);
+
+    const existingTables = rows.map(r => r.TABLE_NAME);
+    const requiredTables = ['tenants', 'boards'];
+    const missingTables = requiredTables.filter(t => !existingTables.includes(t));
+
+    if (missingTables.length > 0) {
+      return res.status(500).json({
+        error: '필수 테이블이 존재하지 않습니다.',
+        missingTables,
+        solution: {
+          tenants: 'Use shared-schema --init',
+          boards: 'Use board-generator --init'
+        }
+      });
+    }
+
+    // categories 테이블이 없으면 자동 생성 가능
+    if (!existingTables.includes('categories')) {
+      // 자동 생성 또는 에러 반환
+      console.warn('categories 테이블이 없습니다. 자동 생성을 시도합니다.');
+    }
+
+    next();
+  } catch (error) {
+    console.error('테이블 확인 오류:', error);
+    res.status(500).json({ error: '데이터베이스 연결 오류' });
+  }
+};
+
+module.exports = { checkCategoryTablesExist };
+```
+
+### Step 4: 라우터에 미들웨어 적용
+
+```javascript
+// api/categories.js
+const { checkCategoryTablesExist } = require('../middleware/checkCategoryTables');
+
+// 모든 카테고리 API에 테이블 확인 미들웨어 적용
+router.use(checkCategoryTablesExist);
+```
+
 ---
 
 ## Phase 1: DB 스키마
+
+> **의존성**: tenants, boards 테이블이 먼저 존재해야 함!
 
 ### categories 테이블
 
