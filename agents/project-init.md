@@ -704,6 +704,11 @@ graph TD
 
 이 에이전트는 다음 에이전트들을 호출합니다:
 
+**최우선 (순서대로):**
+- `~/.claude/agents/shared-schema.md` (공유 테이블)
+- `~/.claude/agents/tenant-manager.md` (테넌트/멀티사이트)
+- `~/.claude/agents/category-manager.md` (카테고리 관리)
+
 **인증:**
 - `~/.claude/agents/auth-backend.md`
 - `~/.claude/agents/auth-frontend.md`
@@ -713,8 +718,12 @@ graph TD
 - `~/.claude/agents/menu-backend.md`
 - `~/.claude/agents/menu-frontend.md`
 
-**공유:**
-- `~/.claude/agents/shared-schema.md`
+**게시판:**
+- `~/.claude/agents/board-generator.md` (오케스트레이터)
+- `~/.claude/agents/board-schema.md` (DB 스키마)
+- `~/.claude/agents/board-templates.md` (템플릿)
+- `~/.claude/agents/board-frontend-pages.md` (페이지 템플릿)
+- `~/.claude/agents/board-attachments.md` (파일 첨부)
 
 **스킬:**
 - `~/.claude/skills/coding-guide/`
