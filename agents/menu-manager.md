@@ -42,6 +42,82 @@ Use menu-manager to add submenu "회사소개" under "서비스소개"
 
 ---
 
+## Phase 0: 기술 스택 분석 (CRITICAL)
+
+> **중요**: 코드 생성 전 반드시 프로젝트 기술 스택을 분석합니다.
+
+### 분석 순서
+
+```bash
+# 1. Backend 기술 스택 확인
+ls package.json          # Node.js/Express
+ls requirements.txt      # Python (Flask/FastAPI/Django)
+ls pom.xml              # Java (Spring)
+ls go.mod               # Go
+
+# 2. Frontend 기술 스택 확인
+ls frontend/package.json
+grep -E "react|vue|angular|next|nuxt" frontend/package.json
+
+# 3. 데이터베이스 확인
+grep -E "mysql|postgres|mongodb|sqlite" package.json requirements.txt 2>/dev/null
+ls docker-compose.yml
+
+# 4. 기존 인증 패턴 확인
+ls -la **/auth/**/*.js **/middleware/**/*.js 2>/dev/null | head -5
+grep -r "jwt\|session\|passport" --include="*.js" | head -5
+
+# 5. 기존 API 패턴 확인
+head -50 server.js 2>/dev/null || head -50 app/main.py 2>/dev/null
+```
+
+### 지원 기술 스택
+
+| Backend | Frontend | Database |
+|---------|----------|----------|
+| Node.js/Express | React | MySQL |
+| Python/FastAPI | React + MUI | PostgreSQL |
+| Python/Flask | Vue.js | SQLite |
+| Python/Django | Next.js | MongoDB |
+| Java/Spring | Angular | - |
+
+### 스택 감지 로직
+
+```javascript
+const detectStack = async () => {
+  let stack = { backend: null, frontend: null, ui: null, database: null, auth: null };
+
+  // Backend 감지
+  if (await fileExists('package.json')) {
+    const pkg = await readJson('package.json');
+    if (pkg.dependencies?.express) stack.backend = 'express';
+    if (pkg.dependencies?.['@nestjs/core']) stack.backend = 'nestjs';
+  } else if (await fileExists('requirements.txt')) {
+    const req = await readFile('requirements.txt');
+    if (req.includes('fastapi')) stack.backend = 'fastapi';
+    else if (req.includes('flask')) stack.backend = 'flask';
+    else if (req.includes('django')) stack.backend = 'django';
+  }
+
+  // Frontend 감지
+  if (await fileExists('frontend/package.json')) {
+    const pkg = await readJson('frontend/package.json');
+    if (pkg.dependencies?.react) stack.frontend = 'react';
+    if (pkg.dependencies?.vue) stack.frontend = 'vue';
+    if (pkg.dependencies?.['@mui/material']) stack.ui = 'mui';
+    if (pkg.dependencies?.bootstrap) stack.ui = 'bootstrap';
+  }
+
+  // 인증 방식 감지
+  if (await grepFile('jwt', '**/*.js')) stack.auth = 'jwt';
+  else if (await grepFile('session', '**/*.js')) stack.auth = 'session';
+
+  return stack;
+};
+```
+
+---
+
 ## 메뉴 타입 정의
 
 | 타입 | 설명 | 대상 | 예시 |
@@ -583,6 +659,485 @@ async function reorderMenus(req, res) {
     connection.release();
   }
 }
+```
+
+---
+
+## 인증/보안/오류 처리 (CRITICAL)
+
+> **중요**: 모든 API에 반드시 적용해야 하는 보안 규칙입니다.
+
+### 1. 인증 미들웨어
+
+```javascript
+// middleware/authMiddleware.js
+const jwt = require('jsonwebtoken');
+
+// JWT 인증 미들웨어
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: { code: 'UNAUTHORIZED', message: '인증 토큰이 필요합니다.' }
+    });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: '유효하지 않은 토큰입니다.' }
+      });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+// 관리자 권한 검증
+const requireAdmin = async (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: { code: 'UNAUTHORIZED', message: '로그인이 필요합니다.' }
+    });
+  }
+
+  const userRoles = await getUserRoles(req.user.id);
+  const isAdmin = userRoles.some(r => ['super_admin', 'admin', 'manager'].includes(r.role_code));
+
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: { code: 'FORBIDDEN', message: '관리자 권한이 필요합니다.' }
+    });
+  }
+
+  req.userRoles = userRoles;
+  next();
+};
+
+// 특정 권한 검증
+const requirePermission = (requiredLevel) => {
+  return async (req, res, next) => {
+    const menuId = req.params.id;
+    const hasPermission = await checkMenuPermission(menuId, req.user.id, requiredLevel);
+
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: '해당 메뉴에 대한 권한이 없습니다.' }
+      });
+    }
+    next();
+  };
+};
+
+module.exports = { authenticateToken, requireAdmin, requirePermission };
+```
+
+### 2. 입력 검증 (Validation)
+
+```javascript
+// validators/menuValidator.js
+const { body, param, query, validationResult } = require('express-validator');
+
+// 검증 결과 처리
+const validate = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: '입력값이 올바르지 않습니다.',
+        details: errors.array()
+      }
+    });
+  }
+  next();
+};
+
+// 메뉴 생성 검증
+const validateCreateMenu = [
+  body('menu_type')
+    .isIn(['site', 'user', 'admin', 'header_utility', 'footer_utility', 'quick_menu'])
+    .withMessage('유효한 메뉴 타입이 아닙니다.'),
+  body('menu_name')
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage('메뉴명은 1-100자 사이여야 합니다.')
+    .escape(), // XSS 방지
+  body('menu_code')
+    .trim()
+    .matches(/^[a-z0-9_]+$/)
+    .withMessage('메뉴 코드는 영문 소문자, 숫자, 언더스코어만 허용됩니다.')
+    .isLength({ min: 1, max: 50 }),
+  body('link_url')
+    .optional()
+    .custom((value) => {
+      // URL 또는 상대 경로만 허용
+      if (value && !value.match(/^(\/|https?:\/\/)/)) {
+        throw new Error('유효한 URL 형식이 아닙니다.');
+      }
+      return true;
+    }),
+  body('parent_id')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('부모 메뉴 ID는 양의 정수여야 합니다.'),
+  validate
+];
+
+// 메뉴 순서 변경 검증
+const validateReorder = [
+  body('orderedIds')
+    .isArray({ min: 1 })
+    .withMessage('순서 배열이 필요합니다.'),
+  body('orderedIds.*')
+    .isInt({ min: 1 })
+    .withMessage('메뉴 ID는 양의 정수여야 합니다.'),
+  body('parentId')
+    .optional({ nullable: true })
+    .isInt({ min: 1 }),
+  validate
+];
+
+// ID 파라미터 검증
+const validateMenuId = [
+  param('id')
+    .isInt({ min: 1 })
+    .withMessage('유효한 메뉴 ID가 필요합니다.'),
+  validate
+];
+
+module.exports = { validateCreateMenu, validateReorder, validateMenuId };
+```
+
+### 3. 보안 설정
+
+```javascript
+// security/securityMiddleware.js
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const xss = require('xss-clean');
+
+// Helmet 설정 (HTTP 헤더 보안)
+const helmetConfig = helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  xssFilter: true,
+  noSniff: true,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+});
+
+// Rate Limiting (API 호출 제한)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15분
+  max: 100, // 최대 100회
+  message: {
+    success: false,
+    error: { code: 'TOO_MANY_REQUESTS', message: '너무 많은 요청입니다. 잠시 후 다시 시도하세요.' }
+  }
+});
+
+// 관리자 API Rate Limiting (더 엄격)
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: {
+    success: false,
+    error: { code: 'TOO_MANY_REQUESTS', message: '너무 많은 요청입니다.' }
+  }
+});
+
+// SQL Injection 방지 (Parameterized Query 사용 강제)
+// 아래처럼 절대 문자열 연결 금지!
+// ❌ BAD: `SELECT * FROM menus WHERE id = ${id}`
+// ✅ GOOD: `SELECT * FROM menus WHERE id = ?`, [id]
+
+module.exports = { helmetConfig, apiLimiter, adminLimiter, xss };
+```
+
+### 4. 표준 에러 처리
+
+```javascript
+// errors/AppError.js
+class AppError extends Error {
+  constructor(code, message, statusCode = 500, details = null) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+    this.details = details;
+    this.isOperational = true;
+
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+// 에러 코드 정의
+const ErrorCodes = {
+  // 인증/권한
+  UNAUTHORIZED: { status: 401, message: '인증이 필요합니다.' },
+  FORBIDDEN: { status: 403, message: '권한이 없습니다.' },
+  TOKEN_EXPIRED: { status: 401, message: '토큰이 만료되었습니다.' },
+
+  // 리소스
+  NOT_FOUND: { status: 404, message: '리소스를 찾을 수 없습니다.' },
+  ALREADY_EXISTS: { status: 409, message: '이미 존재합니다.' },
+  CONFLICT: { status: 409, message: '충돌이 발생했습니다.' },
+
+  // 입력
+  VALIDATION_ERROR: { status: 400, message: '입력값이 올바르지 않습니다.' },
+  INVALID_REQUEST: { status: 400, message: '잘못된 요청입니다.' },
+
+  // 메뉴 관련
+  CIRCULAR_REFERENCE: { status: 400, message: '순환 참조가 발생합니다.' },
+  MENU_HAS_CHILDREN: { status: 400, message: '하위 메뉴가 있어 삭제할 수 없습니다.' },
+  DUPLICATE_MENU_CODE: { status: 409, message: '이미 사용 중인 메뉴 코드입니다.' },
+
+  // 서버
+  INTERNAL_ERROR: { status: 500, message: '서버 오류가 발생했습니다.' },
+  DATABASE_ERROR: { status: 500, message: '데이터베이스 오류가 발생했습니다.' }
+};
+
+module.exports = { AppError, ErrorCodes };
+```
+
+### 5. 글로벌 에러 핸들러
+
+```javascript
+// middleware/errorHandler.js
+const { AppError } = require('../errors/AppError');
+
+const errorHandler = (err, req, res, next) => {
+  // 로깅
+  console.error(`[${new Date().toISOString()}] ${err.code || 'ERROR'}: ${err.message}`);
+  console.error(err.stack);
+
+  // 운영 에러 (예측 가능)
+  if (err.isOperational) {
+    return res.status(err.statusCode).json({
+      success: false,
+      error: {
+        code: err.code,
+        message: err.message,
+        details: err.details
+      }
+    });
+  }
+
+  // 프로그래밍 에러 (예측 불가)
+  // 프로덕션에서는 상세 정보 숨김
+  const isProduction = process.env.NODE_ENV === 'production';
+  return res.status(500).json({
+    success: false,
+    error: {
+      code: 'INTERNAL_ERROR',
+      message: isProduction ? '서버 오류가 발생했습니다.' : err.message,
+      stack: isProduction ? undefined : err.stack
+    }
+  });
+};
+
+// 비동기 핸들러 래퍼
+const asyncHandler = (fn) => {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+};
+
+module.exports = { errorHandler, asyncHandler };
+```
+
+### 6. API 응답 표준
+
+```javascript
+// utils/response.js
+
+// 성공 응답
+const successResponse = (res, data, message = '성공', statusCode = 200) => {
+  return res.status(statusCode).json({
+    success: true,
+    message,
+    data,
+    timestamp: new Date().toISOString()
+  });
+};
+
+// 목록 응답 (페이지네이션)
+const listResponse = (res, data, pagination) => {
+  return res.status(200).json({
+    success: true,
+    data,
+    pagination: {
+      page: pagination.page,
+      limit: pagination.limit,
+      total: pagination.total,
+      totalPages: Math.ceil(pagination.total / pagination.limit)
+    },
+    timestamp: new Date().toISOString()
+  });
+};
+
+// 생성 응답
+const createdResponse = (res, data, message = '생성되었습니다.') => {
+  return successResponse(res, data, message, 201);
+};
+
+// 삭제 응답
+const deletedResponse = (res, message = '삭제되었습니다.') => {
+  return res.status(200).json({
+    success: true,
+    message,
+    timestamp: new Date().toISOString()
+  });
+};
+
+module.exports = { successResponse, listResponse, createdResponse, deletedResponse };
+```
+
+### 7. 메뉴 캐싱
+
+```javascript
+// cache/menuCache.js
+const Redis = require('ioredis');
+
+const redis = new Redis(process.env.REDIS_URL);
+const CACHE_TTL = 60 * 5; // 5분
+
+// 캐시 키 생성
+const getCacheKey = (menuType, userId = 'anonymous') => {
+  return `menu:${menuType}:${userId}`;
+};
+
+// 메뉴 캐시 조회
+const getCachedMenu = async (menuType, userId) => {
+  const key = getCacheKey(menuType, userId);
+  const cached = await redis.get(key);
+  return cached ? JSON.parse(cached) : null;
+};
+
+// 메뉴 캐시 저장
+const setCachedMenu = async (menuType, userId, data) => {
+  const key = getCacheKey(menuType, userId);
+  await redis.setex(key, CACHE_TTL, JSON.stringify(data));
+};
+
+// 메뉴 캐시 삭제 (메뉴 변경 시)
+const invalidateMenuCache = async (menuType = null) => {
+  if (menuType) {
+    // 특정 타입만 삭제
+    const keys = await redis.keys(`menu:${menuType}:*`);
+    if (keys.length > 0) await redis.del(...keys);
+  } else {
+    // 전체 메뉴 캐시 삭제
+    const keys = await redis.keys('menu:*');
+    if (keys.length > 0) await redis.del(...keys);
+  }
+};
+
+// 캐시된 메뉴 조회 (with fallback)
+const getMenuTreeWithCache = async (menuType, user) => {
+  const userId = user?.id || 'anonymous';
+
+  // 캐시 확인
+  const cached = await getCachedMenu(menuType, userId);
+  if (cached) return cached;
+
+  // DB에서 조회
+  const menus = await getMenuTree(menuType, user);
+
+  // 캐시 저장
+  await setCachedMenu(menuType, userId, menus);
+
+  return menus;
+};
+
+module.exports = { getCachedMenu, setCachedMenu, invalidateMenuCache, getMenuTreeWithCache };
+```
+
+### 8. 감사 로그
+
+```javascript
+// logs/auditLog.js
+
+// 메뉴 변경 이력 테이블
+/*
+CREATE TABLE menu_audit_logs (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  menu_id BIGINT NOT NULL,
+  action ENUM('create', 'update', 'delete', 'reorder', 'move') NOT NULL,
+  before_data JSON,
+  after_data JSON,
+  changed_by VARCHAR(100) NOT NULL,
+  changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  ip_address VARCHAR(50),
+  user_agent VARCHAR(500),
+  INDEX idx_menu (menu_id),
+  INDEX idx_action (action),
+  INDEX idx_changed_at (changed_at)
+);
+*/
+
+const logMenuChange = async (menuId, action, beforeData, afterData, req) => {
+  await pool.execute(
+    `INSERT INTO menu_audit_logs
+     (menu_id, action, before_data, after_data, changed_by, ip_address, user_agent)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      menuId,
+      action,
+      beforeData ? JSON.stringify(beforeData) : null,
+      afterData ? JSON.stringify(afterData) : null,
+      req.user?.id || 'system',
+      req.ip || req.connection?.remoteAddress,
+      req.headers['user-agent']?.substring(0, 500)
+    ]
+  );
+};
+
+module.exports = { logMenuChange };
+```
+
+### 9. 라우트 적용 예시
+
+```javascript
+// routes/menuRoutes.js
+const express = require('express');
+const router = express.Router();
+
+const { authenticateToken, requireAdmin } = require('../middleware/authMiddleware');
+const { validateCreateMenu, validateMenuId, validateReorder } = require('../validators/menuValidator');
+const { adminLimiter } = require('../security/securityMiddleware');
+const { asyncHandler } = require('../middleware/errorHandler');
+const menuController = require('../controllers/menuController');
+
+// 공개 API (인증 불필요)
+router.get('/menus', asyncHandler(menuController.getMenuTree));
+router.get('/menus/utility/header', asyncHandler(menuController.getHeaderUtility));
+router.get('/menus/utility/footer', asyncHandler(menuController.getFooterUtility));
+
+// 관리자 API (인증 + 권한 필요)
+router.use('/admin/menus', authenticateToken, requireAdmin, adminLimiter);
+
+router.get('/admin/menus', asyncHandler(menuController.getAllMenus));
+router.get('/admin/menus/:id', validateMenuId, asyncHandler(menuController.getMenuById));
+router.post('/admin/menus', validateCreateMenu, asyncHandler(menuController.createMenu));
+router.put('/admin/menus/:id', validateMenuId, validateCreateMenu, asyncHandler(menuController.updateMenu));
+router.delete('/admin/menus/:id', validateMenuId, asyncHandler(menuController.deleteMenu));
+router.put('/admin/menus/reorder', validateReorder, asyncHandler(menuController.reorderMenus));
+
+module.exports = router;
 ```
 
 ---
