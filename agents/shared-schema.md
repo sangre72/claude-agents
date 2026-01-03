@@ -16,6 +16,195 @@ model: haiku
 
 ---
 
+## 모듈 분리 규칙 (CRITICAL)
+
+> **이 에이전트는 `app/models/shared.py`만 생성합니다.**
+> Board, Post, Comment 등은 **board-backend-model** 에이전트가 별도 파일에 생성합니다.
+
+| 모듈 파일 | 담당 에이전트 | 포함 모델 |
+|-----------|--------------|-----------|
+| `app/models/shared.py` | **이 에이전트** | Tenant, UserGroup, UserGroupMember, Role, UserRole |
+| `app/models/board.py` | board-backend-model | Board, Post, Comment, Attachment |
+| `app/models/user.py` | auth-backend | User, Session |
+| `app/models/menu.py` | menu-backend | Menu, MenuItem |
+
+**❌ 이 에이전트가 생성하지 않는 모델:**
+- Board, Post, Comment, Attachment (→ board-backend-model)
+- User, Session (→ auth-backend)
+- Menu, MenuItem (→ menu-backend)
+
+---
+
+## SQLAlchemy Relationship 패턴 (CRITICAL)
+
+> **에러가 많이 발생하는 부분입니다. 반드시 이 패턴을 따르세요.**
+
+### 1. Overlapping Relationships 경고 해결
+
+Many-to-Many 관계에서 Association 테이블을 직접 모델링할 때 발생합니다.
+
+**경고 메시지:**
+```
+SAWarning: relationship 'User.group_memberships' will copy column users.id
+to column user_group_members.user_id, which conflicts with
+relationship(s): 'User.user_groups'...
+```
+
+**원인과 해결:**
+
+```python
+# ❌ 잘못된 예 - overlapping 경고 발생
+class User(Base):
+    # 직접 관계 (secondary 사용)
+    user_groups: Mapped[List["UserGroup"]] = relationship(
+        secondary="user_group_members",
+        back_populates="users"
+    )
+    # Association 객체 관계 (동일한 FK 사용)
+    group_memberships: Mapped[List["UserGroupMember"]] = relationship(
+        back_populates="user"  # 경고 발생!
+    )
+
+
+# ✅ 올바른 예 1 - overlaps 파라미터 추가
+class User(Base):
+    user_groups: Mapped[List["UserGroup"]] = relationship(
+        secondary="user_group_members",
+        back_populates="users"
+    )
+    group_memberships: Mapped[List["UserGroupMember"]] = relationship(
+        back_populates="user",
+        overlaps="user_groups,users"  # 경고 해제
+    )
+
+
+# ✅ 올바른 예 2 - viewonly=True 사용 (읽기 전용)
+class User(Base):
+    # 기본 관계 (쓰기용)
+    group_memberships: Mapped[List["UserGroupMember"]] = relationship(
+        back_populates="user"
+    )
+    # 편의 관계 (읽기 전용)
+    user_groups: Mapped[List["UserGroup"]] = relationship(
+        secondary="user_group_members",
+        viewonly=True  # 읽기 전용
+    )
+
+
+# ✅ 올바른 예 3 - 하나만 사용 (권장)
+class User(Base):
+    # Association 객체 통해서만 접근
+    group_memberships: Mapped[List["UserGroupMember"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
+    # 편의 프로퍼티로 그룹 접근
+    @property
+    def groups(self) -> List["UserGroup"]:
+        return [m.group for m in self.group_memberships]
+```
+
+### 2. Many-to-Many 패턴 (Association Object)
+
+```python
+# ===== Association 테이블 (모델로 정의) =====
+class UserGroupMember(Base):
+    """사용자-그룹 매핑 (추가 필드 있음)."""
+    __tablename__ = "user_group_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    group_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("user_groups.id", ondelete="CASCADE"), nullable=False)
+
+    # 추가 필드
+    joined_at: Mapped[datetime] = mapped_column(default=func.now())
+    role_in_group: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # Relationships - overlaps 사용
+    user: Mapped["User"] = relationship(back_populates="group_memberships")
+    group: Mapped["UserGroup"] = relationship(back_populates="members")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    # Association 객체 관계
+    group_memberships: Mapped[List["UserGroupMember"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
+    # 편의 관계 (viewonly)
+    user_groups: Mapped[List["UserGroup"]] = relationship(
+        secondary="user_group_members",
+        viewonly=True,
+        overlaps="group_memberships,members,user,group"
+    )
+
+
+class UserGroup(Base):
+    __tablename__ = "user_groups"
+
+    # Association 객체 관계
+    members: Mapped[List["UserGroupMember"]] = relationship(
+        back_populates="group",
+        cascade="all, delete-orphan"
+    )
+
+    # 편의 관계 (viewonly)
+    users: Mapped[List["User"]] = relationship(
+        secondary="user_group_members",
+        viewonly=True,
+        overlaps="group_memberships,members,user,group"
+    )
+```
+
+### 3. 마이그레이션 실행 (CRITICAL)
+
+**"relation does not exist" 에러 발생 시:**
+
+```bash
+# 반드시 서버 실행 전에 마이그레이션 실행!
+cd backend
+alembic upgrade head
+```
+
+**마이그레이션 순서:**
+```
+1. DB 생성 (Phase 0)
+2. alembic upgrade head (테이블 생성)
+3. uvicorn 실행
+```
+
+**자동 마이그레이션 스크립트 (권장):**
+
+```python
+# app/main.py 또는 startup 스크립트
+import subprocess
+import sys
+
+def run_migrations():
+    """서버 시작 전 마이그레이션 실행."""
+    try:
+        result = subprocess.run(
+            ["alembic", "upgrade", "head"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        print(f"✅ Migrations applied: {result.stdout}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Migration failed: {e.stderr}")
+        sys.exit(1)
+
+# 개발 환경에서만 자동 실행
+if settings.ENVIRONMENT == "development":
+    run_migrations()
+```
+
+---
+
 ## 사용법
 
 ```bash

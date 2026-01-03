@@ -19,6 +19,31 @@ model: haiku
 
 ## Phase 0: 기술 스택 분석 (CRITICAL)
 
+### 모듈 분리 규칙 (CRITICAL)
+
+> **중요**: 각 에이전트는 **별도의 모델 파일**을 생성합니다.
+
+| 모듈 파일 | 담당 에이전트 | 포함 모델 |
+|-----------|--------------|-----------|
+| `app/models/shared.py` | shared-schema | Tenant, UserGroup, Role |
+| `app/models/board.py` | board-backend-model | Board, Post, Comment, Attachment |
+| `app/services/board.py` | **이 에이전트** | BoardService |
+
+**올바른 import:**
+```python
+# services/board.py
+from app.models.board import Board, Post, Comment  # ✅ board.py에서
+from app.models.shared import Tenant  # ✅ shared.py에서 (필요시)
+```
+
+**잘못된 import:**
+```python
+# ❌ Board는 shared에 없음!
+from app.models.shared import Board, Post, Comment
+```
+
+### 기술 스택 감지
+
 ```bash
 # Backend 프레임워크 감지
 ls package.json && grep -E "express|fastify|koa|hapi" package.json

@@ -96,7 +96,37 @@ WHERE TABLE_SCHEMA = DATABASE()
 
 → `board-schema.md`의 스키마 참조하여 생성
 
-### Step 3: Python 모델 생성 순서 (CRITICAL)
+### Step 3: Python 모듈 분리 규칙 (CRITICAL)
+
+> **중요**: 각 에이전트는 **별도의 모델 파일**을 생성합니다.
+
+| 모듈 파일 | 담당 에이전트 | 포함 모델 |
+|-----------|--------------|-----------|
+| `app/models/shared.py` | **shared-schema** | Tenant, UserGroup, Role, UserRole, etc. |
+| `app/models/board.py` | **board-backend-model** | Board, BoardCategory, Post, Comment, Attachment, PostLike |
+| `app/models/user.py` | **auth-backend** | User, Session, etc. |
+| `app/models/menu.py` | **menu-backend** | Menu, MenuItem, etc. |
+
+**잘못된 import 예시 (절대 하지 말것!):**
+
+```python
+# ❌ Board는 shared가 아님!
+from app.models.shared import Board, Post, Comment
+
+# ❌ Tenant는 board가 아님!
+from app.models.board import Tenant, UserGroup
+```
+
+**올바른 import 예시:**
+
+```python
+# ✅ 올바른 모듈에서 import
+from app.models.shared import Tenant, UserGroup, Role
+from app.models.board import Board, BoardCategory, Post, Comment, Attachment
+from app.models.user import User
+```
+
+### Step 4: Python 모델 생성 순서 (CRITICAL)
 
 > **SQLAlchemy 사용 시 반드시 준수**
 
@@ -112,7 +142,7 @@ WHERE TABLE_SCHEMA = DATABASE()
 # app/models/__init__.py - 조건부 import 패턴
 
 # 잘못된 예 - 모델이 없으면 ImportError
-from app.models.shared import Board, Post, Comment  # ERROR if not exists!
+from app.models.board import Board, Post, Comment  # ERROR if file not exists!
 
 # 올바른 예 - 안전한 import
 try:

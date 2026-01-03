@@ -222,6 +222,124 @@ router.use(checkCategoryTablesExist);
 
 > **의존성**: tenants, boards 테이블이 먼저 존재해야 함!
 
+### SQLAlchemy 모델 (Python/FastAPI용)
+
+> **CRITICAL**: Self-referential relationship (parent-child)에서 `cascade` 설정 주의!
+
+```python
+# app/models/category.py
+
+from typing import Optional, List, TYPE_CHECKING
+import uuid
+from datetime import datetime
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, Index
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
+
+from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.board import Board
+
+
+class Category(Base):
+    """카테고리 모델 (계층형)."""
+    __tablename__ = "categories"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    board_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("boards.id", ondelete="CASCADE"), nullable=False)
+
+    # 계층 구조 (Self-referential)
+    parent_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
+    depth: Mapped[int] = mapped_column(Integer, default=0)
+    path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # 기본 정보
+    category_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    category_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # 표시 설정
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    color: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    # 권한
+    read_permission: Mapped[str] = mapped_column(String(50), default="all")
+    write_permission: Mapped[str] = mapped_column(String(50), default="all")
+
+    # 게시글 수 (캐시)
+    post_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # 감사 컬럼
+    created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now(), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # =====================================
+    # Relationships (CRITICAL)
+    # =====================================
+
+    # ❌ 잘못된 예 - delete-orphan은 self-referential에서 주의!
+    # children: Mapped[List["Category"]] = relationship(
+    #     back_populates="parent",
+    #     cascade="all, delete-orphan"  # ERROR!
+    # )
+
+    # ✅ 올바른 예 1 - delete-orphan 없이 사용
+    parent: Mapped[Optional["Category"]] = relationship(
+        "Category",
+        remote_side="Category.id",
+        back_populates="children"
+    )
+    children: Mapped[List["Category"]] = relationship(
+        "Category",
+        back_populates="parent",
+        cascade="all, delete"  # delete-orphan 제외!
+    )
+
+    # ✅ 올바른 예 2 - single_parent=True 설정 (특수 케이스)
+    # children: Mapped[List["Category"]] = relationship(
+    #     "Category",
+    #     back_populates="parent",
+    #     cascade="all, delete-orphan",
+    #     single_parent=True  # 한 부모만 가질 수 있음을 명시
+    # )
+
+    # Board relationship
+    board: Mapped["Board"] = relationship(back_populates="categories")
+
+    __table_args__ = (
+        Index("ix_categories_tenant_id", "tenant_id"),
+        Index("ix_categories_board_id", "board_id"),
+        Index("ix_categories_parent_id", "parent_id"),
+        Index("ix_categories_sort_order", "sort_order"),
+    )
+```
+
+### Self-Referential Relationship 규칙
+
+| 설정 | 사용 가능 | 설명 |
+|------|-----------|------|
+| `cascade="all, delete"` | ✅ 권장 | 부모 삭제 시 자식도 삭제 |
+| `cascade="all, delete-orphan"` | ⚠️ 조건부 | `single_parent=True` 필수 |
+| `cascade="save-update, merge"` | ✅ 안전 | 기본값, 삭제 안함 |
+
+**delete-orphan 에러 발생 시:**
+```
+Error: For many-to-one relationship Category.children, delete-orphan cascade
+is normally configured only on the "one" side...
+```
+
+**해결방법:**
+1. `cascade="all, delete"` 사용 (delete-orphan 제외)
+2. 또는 `single_parent=True` 추가
+
+---
+
 ### categories 테이블
 
 ```sql
