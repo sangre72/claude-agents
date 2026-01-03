@@ -146,6 +146,29 @@ DATABASE_URL="postgresql://user:password@localhost:5432/{프로젝트명}"
 ### 필수 감사 컬럼
 created_at, created_by, updated_at, updated_by, is_active, is_deleted
 
+### SQLAlchemy 예약어 주의 (CRITICAL)
+
+> 다음 이름은 SQLAlchemy Declarative API에서 예약됨 - **컬럼명으로 사용 금지**
+
+| 예약어 | 대안 |
+|--------|------|
+| `metadata` | `meta_data`, `extra_data`, `item_metadata` |
+| `registry` | `item_registry`, `data_registry` |
+| `__table__` | 사용 불가 |
+| `__tablename__` | 테이블명 정의에만 사용 |
+| `__mapper__` | 사용 불가 |
+
+```python
+# 잘못된 예
+class Menu(Base):
+    metadata = Column(JSON)  # ERROR!
+
+# 올바른 예
+class Menu(Base):
+    menu_metadata = Column(JSON)  # OK
+    extra_data = Column(JSON)     # OK
+```
+
 ---
 
 ## 실행 가이드
