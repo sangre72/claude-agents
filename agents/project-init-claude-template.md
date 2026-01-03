@@ -18,8 +18,43 @@ project-init 에이전트가 생성하는 CLAUDE.md 파일의 템플릿입니다
 
 ## 프로젝트 정보
 
+- **프로젝트명**: {프로젝트 디렉토리명}
 - **기술 스택**: {감지된 스택}
+- **데이터베이스**: {DB명} (프로젝트명과 동일)
 - **생성일**: {오늘 날짜}
+
+---
+
+## 데이터베이스 설정
+
+> **DB명 규칙**: 프로젝트 디렉토리명 사용 (하이픈은 언더스코어로 변환)
+> 예: `my-project` → DB명 `my_project`
+
+### 초기 설정 명령
+
+```bash
+# 프로젝트명 확인
+PROJECT_NAME=$(basename $(pwd) | tr '-' '_')
+echo "DB Name: $PROJECT_NAME"
+
+# MySQL
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS ${PROJECT_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+# PostgreSQL
+psql -U postgres -c "CREATE DATABASE ${PROJECT_NAME} WITH ENCODING 'UTF8';"
+
+# Prisma (Next.js)
+npx prisma db push
+```
+
+### 환경변수 (.env)
+
+```bash
+# 프로젝트명에 맞게 수정
+DATABASE_URL="mysql://user:password@localhost:3306/{프로젝트명}"
+# 또는
+DATABASE_URL="postgresql://user:password@localhost:5432/{프로젝트명}"
+```
 
 ---
 

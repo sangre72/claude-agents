@@ -106,7 +106,69 @@ const tenantMiddleware = async (req, res, next) => {
 
 ---
 
-## Phase 0: 테이블 존재 확인 (CRITICAL)
+## Phase 0: 데이터베이스 생성 (CRITICAL - 최우선)
+
+> **중요**: 테이블 생성 전 반드시 데이터베이스가 존재해야 합니다.
+> **DB 이름**: 현재 프로젝트 디렉토리 이름 사용 (예: `myproject` → DB명 `myproject`)
+
+### 프로젝트 이름 확인
+
+```bash
+# 현재 프로젝트 디렉토리명 확인
+basename $(pwd)
+# 예: /home/user/myproject → myproject
+```
+
+### 데이터베이스 생성
+
+#### MySQL / MariaDB
+
+```bash
+# 프로젝트명으로 DB 생성
+PROJECT_NAME=$(basename $(pwd) | tr '-' '_')
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS ${PROJECT_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+# 사용자 권한 부여 (필요시)
+mysql -u root -p -e "GRANT ALL PRIVILEGES ON ${PROJECT_NAME}.* TO 'app_user'@'localhost';"
+mysql -u root -p -e "FLUSH PRIVILEGES;"
+```
+
+#### PostgreSQL
+
+```bash
+# 프로젝트명으로 DB 생성
+PROJECT_NAME=$(basename $(pwd) | tr '-' '_')
+psql -U postgres -c "CREATE DATABASE ${PROJECT_NAME} WITH ENCODING 'UTF8';"
+
+# 사용자 권한 부여 (필요시)
+psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE ${PROJECT_NAME} TO app_user;"
+```
+
+#### Prisma (Next.js)
+
+```bash
+# .env 파일에 DATABASE_URL 설정 후
+npx prisma db push
+# 또는
+npx prisma migrate dev --name init
+```
+
+### 환경변수 설정 (.env)
+
+```bash
+# MySQL
+DATABASE_URL="mysql://user:password@localhost:3306/${PROJECT_NAME}"
+
+# PostgreSQL
+DATABASE_URL="postgresql://user:password@localhost:5432/${PROJECT_NAME}"
+
+# SQLite (개발용)
+DATABASE_URL="file:./${PROJECT_NAME}.db"
+```
+
+---
+
+## Phase 1: 테이블 존재 확인 (CRITICAL)
 
 > **중요**: 모든 에이전트는 실행 전 이 체크를 수행해야 합니다.
 
