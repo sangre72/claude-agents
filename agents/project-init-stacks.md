@@ -182,6 +182,74 @@ frontend/
 
 ---
 
+## FastAPI 실행 가이드
+
+### 1. 가상환경 설정
+
+```bash
+cd backend
+
+# 가상환경 생성
+python -m venv venv
+
+# 가상환경 활성화
+# macOS/Linux:
+source venv/bin/activate
+# Windows:
+.\venv\Scripts\activate
+
+# 가상환경 비활성화 (작업 완료 후)
+deactivate
+```
+
+### 2. 의존성 설치
+
+```bash
+# 가상환경 활성화 상태에서
+pip install -r requirements.txt
+
+# 또는 개발용 의존성 포함
+pip install -r requirements-dev.txt
+```
+
+### 3. 환경변수 설정
+
+```bash
+cp .env.example .env
+# .env 파일에서 DATABASE_URL, SECRET_KEY 수정
+```
+
+### 4. DB 마이그레이션
+
+```bash
+# 마이그레이션 생성
+alembic revision --autogenerate -m "init"
+
+# 마이그레이션 실행
+alembic upgrade head
+```
+
+### 5. 서버 실행
+
+```bash
+# 개발 서버 (자동 리로드)
+uvicorn app.main:app --reload
+
+# 포트 지정
+uvicorn app.main:app --reload --port 8000
+
+# 호스트 지정 (외부 접근 허용)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 6. 접속 확인
+
+- API 서버: http://localhost:8000
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+---
+
 ## FastAPI 필수 의존성
 
 ```txt

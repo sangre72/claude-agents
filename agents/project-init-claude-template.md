@@ -145,6 +145,43 @@ DATABASE_URL="postgresql://user:password@localhost:5432/{프로젝트명}"
 
 ### 필수 감사 컬럼
 created_at, created_by, updated_at, updated_by, is_active, is_deleted
+
+---
+
+## 실행 가이드
+
+### Backend (FastAPI)
+
+# 1. 가상환경 설정
+cd backend
+python -m venv venv
+source venv/bin/activate  # macOS/Linux
+# .\venv\Scripts\activate  # Windows
+
+# 2. 의존성 설치
+pip install -r requirements.txt
+
+# 3. 환경변수 설정
+cp .env.example .env
+
+# 4. DB 마이그레이션
+alembic upgrade head
+
+# 5. 서버 실행
+uvicorn app.main:app --reload
+
+# 접속: http://localhost:8000/docs
+
+### Frontend (Next.js)
+
+# 1. 의존성 설치
+cd frontend
+npm install
+
+# 2. 개발 서버
+npm run dev
+
+# 접속: http://localhost:3000
 ```
 
 ---
