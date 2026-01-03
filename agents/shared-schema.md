@@ -207,7 +207,176 @@ class User(Base):
         return [m.group for m in self.group_memberships]
 ```
 
-### 2. Many-to-Many 패턴 (Association Object)
+### 2. overlaps 파라미터 규칙
+
+> **핵심**: 같은 FK를 참조하는 모든 relationship에 `overlaps` 추가
+
+**overlaps 값 찾는 방법:**
+```
+경고 메시지에서 충돌하는 relationship 이름 확인:
+"conflicts with relationship(s): 'User.user_groups'"
+→ overlaps="user_groups"
+
+여러 개면 쉼표로:
+→ overlaps="user_groups,users,group_memberships"
+```
+
+**전체 모델 예시 (경고 없음):**
+
+```python
+# ===== User 모델 =====
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+
+    # Association 객체 관계 (기본)
+    group_memberships: Mapped[List["UserGroupMember"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+    role_assignments: Mapped[List["UserRole"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
+    # 편의 관계 (viewonly + overlaps)
+    user_groups: Mapped[List["UserGroup"]] = relationship(
+        secondary="user_group_members",
+        viewonly=True,
+        overlaps="group_memberships,user,group,members"
+    )
+    roles: Mapped[List["Role"]] = relationship(
+        secondary="user_roles",
+        viewonly=True,
+        overlaps="role_assignments,user,role,role_users"
+    )
+
+
+# ===== UserGroup 모델 =====
+class UserGroup(Base):
+    __tablename__ = "user_groups"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+
+    # Association 객체 관계 (기본)
+    members: Mapped[List["UserGroupMember"]] = relationship(
+        back_populates="group",
+        cascade="all, delete-orphan"
+    )
+
+    # 편의 관계 (viewonly + overlaps)
+    users: Mapped[List["User"]] = relationship(
+        secondary="user_group_members",
+        viewonly=True,
+        overlaps="group_memberships,members,user,group"
+    )
+
+
+# ===== UserGroupMember (Association) =====
+class UserGroupMember(Base):
+    __tablename__ = "user_group_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_groups.id", ondelete="CASCADE"))
+
+    # 양방향 관계 (overlaps 필수!)
+    user: Mapped["User"] = relationship(
+        back_populates="group_memberships",
+        overlaps="user_groups,users"
+    )
+    group: Mapped["UserGroup"] = relationship(
+        back_populates="members",
+        overlaps="user_groups,users"
+    )
+
+
+# ===== Role 모델 =====
+class Role(Base):
+    __tablename__ = "roles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+
+    # Association 객체 관계
+    role_users: Mapped[List["UserRole"]] = relationship(
+        back_populates="role",
+        cascade="all, delete-orphan"
+    )
+    role_permissions: Mapped[List["RolePermission"]] = relationship(
+        back_populates="role",
+        cascade="all, delete-orphan"
+    )
+
+    # 편의 관계
+    users: Mapped[List["User"]] = relationship(
+        secondary="user_roles",
+        viewonly=True,
+        overlaps="role_assignments,role_users,user,role"
+    )
+    permissions: Mapped[List["Permission"]] = relationship(
+        secondary="role_permissions",
+        viewonly=True,
+        overlaps="role_permissions,permission,role"
+    )
+
+
+# ===== UserRole (Association) =====
+class UserRole(Base):
+    __tablename__ = "user_roles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    role_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"))
+
+    user: Mapped["User"] = relationship(
+        back_populates="role_assignments",
+        overlaps="roles,users"
+    )
+    role: Mapped["Role"] = relationship(
+        back_populates="role_users",
+        overlaps="roles,users"
+    )
+
+
+# ===== Permission 모델 =====
+class Permission(Base):
+    __tablename__ = "permissions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+
+    role_permissions: Mapped[List["RolePermission"]] = relationship(
+        back_populates="permission",
+        cascade="all, delete-orphan"
+    )
+    roles: Mapped[List["Role"]] = relationship(
+        secondary="role_permissions",
+        viewonly=True,
+        overlaps="role_permissions,permission,role"
+    )
+
+
+# ===== RolePermission (Association) =====
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    role_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"))
+    permission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("permissions.id", ondelete="CASCADE"))
+
+    role: Mapped["Role"] = relationship(
+        back_populates="role_permissions",
+        overlaps="permissions,roles"
+    )
+    permission: Mapped["Permission"] = relationship(
+        back_populates="role_permissions",
+        overlaps="permissions,roles"
+    )
+```
+
+---
+
+### 3. Many-to-Many 패턴 요약
 
 ```python
 # ===== Association 테이블 (모델로 정의) =====
