@@ -422,6 +422,17 @@ const tenantMiddleware = async (req, res, next) => {
 > **중요**: 테이블 생성 전 반드시 데이터베이스가 존재해야 합니다.
 > **DB 이름**: 현재 프로젝트 디렉토리 이름 사용 (예: `myproject` → DB명 `myproject`)
 
+### 멱등성 원칙 (Idempotent)
+
+> **핵심**: 모든 생성 작업은 "없으면 생성, 있으면 스킵" 방식으로 처리합니다.
+
+```
+✅ 데이터베이스 있음 → 스킵
+✅ 테이블 있음 → 스킵
+✅ 인덱스 있음 → 스킵
+✅ 제약조건 있음 → 스킵
+```
+
 ### Step 1: 프로젝트 이름 확인
 
 ```bash
@@ -470,18 +481,24 @@ sudo systemctl enable mysql
 
 ---
 
-### Step 3: 데이터베이스 생성
+### Step 3: 데이터베이스 생성 (멱등성)
+
+> **원칙**: 이미 존재하면 스킵, 없으면 생성
 
 #### PostgreSQL
 
 ```bash
 PROJECT_NAME=$(basename $(pwd) | tr '-' '_')
 
-# 데이터베이스 생성
-psql -U postgres -c "CREATE DATABASE ${PROJECT_NAME} WITH ENCODING 'UTF8';"
+# 데이터베이스 존재 확인 후 생성
+psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = '${PROJECT_NAME}'" | grep -q 1 || \
+  psql -U postgres -c "CREATE DATABASE ${PROJECT_NAME} WITH ENCODING 'UTF8';"
 
-# 사용자 생성 및 권한 부여 (선택)
-psql -U postgres -c "CREATE USER app_user WITH PASSWORD 'your_password';"
+# 또는 한 줄로 (에러 무시)
+psql -U postgres -c "CREATE DATABASE ${PROJECT_NAME} WITH ENCODING 'UTF8';" 2>/dev/null || echo "DB already exists"
+
+# 사용자 생성 (이미 있으면 스킵)
+psql -U postgres -c "CREATE USER app_user WITH PASSWORD 'your_password';" 2>/dev/null || echo "User already exists"
 psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE ${PROJECT_NAME} TO app_user;"
 ```
 
@@ -490,13 +507,49 @@ psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE ${PROJECT_NAME} TO app_use
 ```bash
 PROJECT_NAME=$(basename $(pwd) | tr '-' '_')
 
-# 데이터베이스 생성
+# 데이터베이스 생성 (IF NOT EXISTS 사용)
 mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS ${PROJECT_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
-# 사용자 생성 및 권한 부여 (선택)
-mysql -u root -p -e "CREATE USER 'app_user'@'localhost' IDENTIFIED BY 'your_password';"
+# 사용자 생성 (IF NOT EXISTS 사용)
+mysql -u root -p -e "CREATE USER IF NOT EXISTS 'app_user'@'localhost' IDENTIFIED BY 'your_password';"
 mysql -u root -p -e "GRANT ALL PRIVILEGES ON ${PROJECT_NAME}.* TO 'app_user'@'localhost';"
 mysql -u root -p -e "FLUSH PRIVILEGES;"
+```
+
+#### Python 스크립트 (권장)
+
+```python
+# scripts/init_db.py
+import os
+import subprocess
+
+def get_project_name():
+    """현재 프로젝트명 반환 (하이픈 → 언더스코어)."""
+    return os.path.basename(os.getcwd()).replace('-', '_')
+
+def init_postgres():
+    """PostgreSQL 데이터베이스 초기화."""
+    db_name = get_project_name()
+
+    # DB 존재 확인
+    result = subprocess.run(
+        ["psql", "-U", "postgres", "-tc",
+         f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'"],
+        capture_output=True, text=True
+    )
+
+    if "1" not in result.stdout:
+        print(f"✅ Creating database: {db_name}")
+        subprocess.run(
+            ["psql", "-U", "postgres", "-c",
+             f"CREATE DATABASE {db_name} WITH ENCODING 'UTF8';"],
+            check=True
+        )
+    else:
+        print(f"⏭️  Database already exists: {db_name}")
+
+if __name__ == "__main__":
+    init_postgres()
 ```
 
 ---
@@ -584,11 +637,145 @@ npx prisma migrate dev --name init
 
 ---
 
-## Phase 1: 테이블 존재 확인 (CRITICAL)
+## Phase 1: 테이블/인덱스 멱등성 처리 (CRITICAL)
 
-> **중요**: 모든 에이전트는 실행 전 이 체크를 수행해야 합니다.
+> **원칙**: 있으면 스킵, 없으면 생성 - 에러 없이 여러 번 실행 가능해야 함
 
-### 확인 쿼리
+### SQL 멱등성 패턴
+
+#### 테이블 생성 (CREATE TABLE IF NOT EXISTS)
+
+```sql
+-- PostgreSQL / MySQL 공통
+CREATE TABLE IF NOT EXISTS tenants (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_code VARCHAR(50) NOT NULL UNIQUE,
+    -- ...
+);
+```
+
+#### 인덱스 생성 (IF NOT EXISTS)
+
+```sql
+-- PostgreSQL
+CREATE INDEX IF NOT EXISTS ix_posts_tenant_id ON posts(tenant_id);
+CREATE INDEX IF NOT EXISTS ix_posts_board_id ON posts(board_id);
+
+-- MySQL (5.7+)
+CREATE INDEX ix_posts_tenant_id ON posts(tenant_id);
+-- 에러 발생 시 무시하거나 존재 확인 후 생성
+
+-- MySQL 존재 확인 후 생성
+SET @exist := (SELECT COUNT(*) FROM information_schema.statistics
+               WHERE table_name = 'posts' AND index_name = 'ix_posts_tenant_id');
+SET @sqlstmt := IF(@exist > 0, 'SELECT ''Index exists''',
+               'CREATE INDEX ix_posts_tenant_id ON posts(tenant_id)');
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+```
+
+#### Alembic 마이그레이션 멱등성
+
+```python
+# alembic/versions/xxx_create_tables.py
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy import inspect
+
+def table_exists(table_name):
+    """테이블 존재 여부 확인."""
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    return table_name in inspector.get_table_names()
+
+def index_exists(table_name, index_name):
+    """인덱스 존재 여부 확인."""
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    indexes = inspector.get_indexes(table_name)
+    return any(idx['name'] == index_name for idx in indexes)
+
+def upgrade():
+    # 테이블 없으면 생성
+    if not table_exists('tenants'):
+        op.create_table(
+            'tenants',
+            sa.Column('id', sa.UUID(), nullable=False),
+            sa.Column('tenant_code', sa.String(50), nullable=False),
+            # ...
+            sa.PrimaryKeyConstraint('id', name='pk_tenants'),
+            sa.UniqueConstraint('tenant_code', name='uq_tenants_code'),
+        )
+        print("✅ Created table: tenants")
+    else:
+        print("⏭️  Table already exists: tenants")
+
+    # 인덱스 없으면 생성
+    if table_exists('posts') and not index_exists('posts', 'ix_posts_tenant_id'):
+        op.create_index('ix_posts_tenant_id', 'posts', ['tenant_id'])
+        print("✅ Created index: ix_posts_tenant_id")
+    else:
+        print("⏭️  Index already exists: ix_posts_tenant_id")
+
+def downgrade():
+    # 있으면 삭제
+    if table_exists('tenants'):
+        op.drop_table('tenants')
+```
+
+#### SQLAlchemy 모델에서 처리
+
+```python
+# app/db/init_db.py
+from sqlalchemy import inspect, text
+from app.db.session import engine
+from app.db.base import Base
+
+def init_db():
+    """데이터베이스 초기화 (멱등성)."""
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    # 없는 테이블만 생성
+    tables_to_create = [
+        table for table in Base.metadata.tables.values()
+        if table.name not in existing_tables
+    ]
+
+    if tables_to_create:
+        Base.metadata.create_all(bind=engine, tables=tables_to_create)
+        print(f"✅ Created tables: {[t.name for t in tables_to_create]}")
+    else:
+        print("⏭️  All tables already exist")
+
+def check_and_create_indexes():
+    """인덱스 존재 확인 후 생성."""
+    inspector = inspect(engine)
+
+    required_indexes = [
+        ('posts', 'ix_posts_tenant_id', ['tenant_id']),
+        ('posts', 'ix_posts_board_id', ['board_id']),
+        ('comments', 'ix_comments_post_id', ['post_id']),
+    ]
+
+    with engine.connect() as conn:
+        for table, index_name, columns in required_indexes:
+            if table not in inspector.get_table_names():
+                continue
+
+            existing = inspector.get_indexes(table)
+            if not any(idx['name'] == index_name for idx in existing):
+                cols = ', '.join(columns)
+                conn.execute(text(f"CREATE INDEX {index_name} ON {table}({cols})"))
+                print(f"✅ Created index: {index_name}")
+            else:
+                print(f"⏭️  Index exists: {index_name}")
+        conn.commit()
+```
+
+---
+
+### 테이블 존재 확인 쿼리
 
 ```sql
 -- MySQL/MariaDB
@@ -596,6 +783,11 @@ SELECT TABLE_NAME
 FROM information_schema.TABLES
 WHERE TABLE_SCHEMA = DATABASE()
   AND TABLE_NAME IN ('tenants', 'user_groups', 'user_group_members', 'roles', 'user_roles');
+
+-- PostgreSQL
+SELECT tablename FROM pg_tables
+WHERE schemaname = 'public'
+  AND tablename IN ('tenants', 'user_groups', 'user_group_members', 'roles', 'user_roles');
 
 -- 결과가 5개 미만이면 초기화 필요
 ```
