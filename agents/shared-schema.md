@@ -160,7 +160,129 @@ class UserGroup(Base):
     )
 ```
 
-### 3. 마이그레이션 실행 (CRITICAL)
+### 3. 인덱스/제약조건 명명 규칙 (CRITICAL)
+
+> **인덱스 이름 충돌 방지**: 테이블명을 접두사로 사용하여 고유하게 생성
+
+**에러 메시지:**
+```
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.DuplicateObject)
+relation "ix_tenant_id" already exists
+```
+
+**명명 규칙:**
+
+| 유형 | 패턴 | 예시 |
+|------|------|------|
+| 인덱스 | `ix_{table}_{column}` | `ix_posts_tenant_id` |
+| 복합 인덱스 | `ix_{table}_{col1}_{col2}` | `ix_posts_board_id_created_at` |
+| Unique | `uq_{table}_{column}` | `uq_boards_code` |
+| Foreign Key | `fk_{table}_{column}_{ref}` | `fk_posts_board_id_boards` |
+| Primary Key | `pk_{table}` | `pk_posts` |
+| Check | `ck_{table}_{column}` | `ck_users_status` |
+
+**SQLAlchemy 적용:**
+
+```python
+# ❌ 잘못된 예 - 인덱스 이름 충돌 가능
+class Post(Base):
+    __tablename__ = "posts"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id"),
+        index=True  # 자동 이름: ix_tenant_id → 다른 테이블과 충돌!
+    )
+
+
+# ✅ 올바른 예 - 테이블명 포함
+class Post(Base):
+    __tablename__ = "posts"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", name="fk_posts_tenant_id_tenants"),
+        nullable=False
+    )
+
+    __table_args__ = (
+        # 명시적 인덱스 이름
+        Index("ix_posts_tenant_id", "tenant_id"),
+        Index("ix_posts_board_id", "board_id"),
+        Index("ix_posts_created_at", "created_at"),
+        # 복합 인덱스
+        Index("ix_posts_board_created", "board_id", "created_at"),
+        # Unique 제약
+        UniqueConstraint("board_id", "slug", name="uq_posts_board_slug"),
+    )
+```
+
+**__table_args__ 패턴:**
+
+```python
+from sqlalchemy import Index, UniqueConstraint, CheckConstraint
+
+class Board(Base):
+    __tablename__ = "boards"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (
+        # 인덱스 - 테이블명 접두사 필수!
+        Index("ix_boards_tenant_id", "tenant_id"),
+        Index("ix_boards_code", "code"),
+        Index("ix_boards_sort_order", "sort_order"),
+
+        # Unique - 테넌트별로 게시판 코드 유일
+        UniqueConstraint("tenant_id", "code", name="uq_boards_tenant_code"),
+
+        # Check 제약 (선택)
+        CheckConstraint("sort_order >= 0", name="ck_boards_sort_order_positive"),
+    )
+```
+
+**column에 직접 index=True 사용 시 이름 지정:**
+
+```python
+# 직접 이름 지정 불가 - __table_args__ 사용 권장
+# 또는 Index 객체를 inline으로 사용:
+
+tenant_id: Mapped[uuid.UUID] = mapped_column(
+    UUID(as_uuid=True),
+    ForeignKey("tenants.id"),
+    # index=True 대신 __table_args__에서 Index() 사용
+)
+```
+
+**Alembic 마이그레이션에서 확인:**
+
+```python
+# alembic/versions/xxx_create_posts.py
+
+def upgrade():
+    op.create_table(
+        'posts',
+        sa.Column('id', sa.UUID(), nullable=False),
+        sa.Column('tenant_id', sa.UUID(), nullable=False),
+        sa.Column('board_id', sa.UUID(), nullable=False),
+        # ...
+        sa.PrimaryKeyConstraint('id', name='pk_posts'),
+        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], name='fk_posts_tenant_id_tenants', ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['board_id'], ['boards.id'], name='fk_posts_board_id_boards', ondelete='CASCADE'),
+    )
+    # 별도로 인덱스 생성 (명시적 이름)
+    op.create_index('ix_posts_tenant_id', 'posts', ['tenant_id'])
+    op.create_index('ix_posts_board_id', 'posts', ['board_id'])
+    op.create_index('ix_posts_created_at', 'posts', ['created_at'])
+```
+
+---
+
+### 4. 마이그레이션 실행 (CRITICAL)
 
 **"relation does not exist" 에러 발생 시:**
 

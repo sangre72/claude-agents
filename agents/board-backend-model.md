@@ -14,6 +14,34 @@ SQLAlchemy 모델과 Pydantic 스키마를 생성합니다.
 
 - board-shared (필수, 먼저 완료되어야 함)
 
+---
+
+## 인덱스/제약조건 명명 규칙 (CRITICAL)
+
+> **인덱스 이름 충돌 방지**: 반드시 테이블명을 접두사로 포함!
+
+| 유형 | 패턴 | 예시 |
+|------|------|------|
+| 인덱스 | `ix_{table}_{column}` | `ix_posts_board_id` |
+| 복합 인덱스 | `ix_{table}_{col1}_{col2}` | `ix_posts_board_created_at` |
+| Unique | `uq_{table}_{column}` | `uq_boards_tenant_code` |
+| Foreign Key | `fk_{table}_{column}_{ref}` | `fk_posts_board_id_boards` |
+
+**❌ 잘못된 예 - 충돌 가능:**
+```python
+Index("ix_board_id", "board_id")      # 다른 테이블과 충돌!
+Index("ix_tenant_id", "tenant_id")    # 모든 테이블에서 충돌!
+```
+
+**✅ 올바른 예 - 테이블명 포함:**
+```python
+Index("ix_posts_board_id", "board_id")
+Index("ix_posts_tenant_id", "tenant_id")
+Index("ix_comments_post_id", "post_id")
+```
+
+---
+
 ## 생성 파일
 
 ### 1. SQLAlchemy 모델 (backend/app/models/board.py)
