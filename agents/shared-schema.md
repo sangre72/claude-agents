@@ -111,59 +111,164 @@ const tenantMiddleware = async (req, res, next) => {
 > **중요**: 테이블 생성 전 반드시 데이터베이스가 존재해야 합니다.
 > **DB 이름**: 현재 프로젝트 디렉토리 이름 사용 (예: `myproject` → DB명 `myproject`)
 
-### 프로젝트 이름 확인
+### Step 1: 프로젝트 이름 확인
 
 ```bash
 # 현재 프로젝트 디렉토리명 확인
-basename $(pwd)
-# 예: /home/user/myproject → myproject
+PROJECT_NAME=$(basename $(pwd) | tr '-' '_')
+echo "DB Name: ${PROJECT_NAME}"
 ```
 
-### 데이터베이스 생성
+---
 
-#### MySQL / MariaDB
+### Step 2: 로컬 데이터베이스 설치 (필수)
+
+#### PostgreSQL 설치
 
 ```bash
-# 프로젝트명으로 DB 생성
-PROJECT_NAME=$(basename $(pwd) | tr '-' '_')
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS ${PROJECT_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+# macOS (Homebrew)
+brew install postgresql@16
+brew services start postgresql@16
 
-# 사용자 권한 부여 (필요시)
-mysql -u root -p -e "GRANT ALL PRIVILEGES ON ${PROJECT_NAME}.* TO 'app_user'@'localhost';"
-mysql -u root -p -e "FLUSH PRIVILEGES;"
+# Ubuntu/Debian
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# Windows
+# https://www.postgresql.org/download/windows/ 에서 다운로드
 ```
+
+#### MySQL 설치
+
+```bash
+# macOS (Homebrew)
+brew install mysql
+brew services start mysql
+
+# Ubuntu/Debian
+sudo apt update
+sudo apt install mysql-server
+sudo systemctl start mysql
+sudo systemctl enable mysql
+
+# Windows
+# https://dev.mysql.com/downloads/mysql/ 에서 다운로드
+```
+
+---
+
+### Step 3: 데이터베이스 생성
 
 #### PostgreSQL
 
 ```bash
-# 프로젝트명으로 DB 생성
 PROJECT_NAME=$(basename $(pwd) | tr '-' '_')
+
+# 데이터베이스 생성
 psql -U postgres -c "CREATE DATABASE ${PROJECT_NAME} WITH ENCODING 'UTF8';"
 
-# 사용자 권한 부여 (필요시)
+# 사용자 생성 및 권한 부여 (선택)
+psql -U postgres -c "CREATE USER app_user WITH PASSWORD 'your_password';"
 psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE ${PROJECT_NAME} TO app_user;"
+```
+
+#### MySQL / MariaDB
+
+```bash
+PROJECT_NAME=$(basename $(pwd) | tr '-' '_')
+
+# 데이터베이스 생성
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS ${PROJECT_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+# 사용자 생성 및 권한 부여 (선택)
+mysql -u root -p -e "CREATE USER 'app_user'@'localhost' IDENTIFIED BY 'your_password';"
+mysql -u root -p -e "GRANT ALL PRIVILEGES ON ${PROJECT_NAME}.* TO 'app_user'@'localhost';"
+mysql -u root -p -e "FLUSH PRIVILEGES;"
+```
+
+---
+
+### Step 4: Docker 사용 (선택사항)
+
+> **참고**: 로컬 설치 대신 Docker 사용 시
+
+```bash
+# PostgreSQL
+docker run -d \
+  --name ${PROJECT_NAME}_db \
+  -e POSTGRES_DB=${PROJECT_NAME} \
+  -e POSTGRES_USER=app_user \
+  -e POSTGRES_PASSWORD=your_password \
+  -p 5432:5432 \
+  postgres:16
+
+# MySQL
+docker run -d \
+  --name ${PROJECT_NAME}_db \
+  -e MYSQL_DATABASE=${PROJECT_NAME} \
+  -e MYSQL_USER=app_user \
+  -e MYSQL_PASSWORD=your_password \
+  -e MYSQL_ROOT_PASSWORD=root_password \
+  -p 3306:3306 \
+  mysql:8
+```
+
+또는 docker-compose.yml:
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${PROJECT_NAME}
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: your_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  db_data:
+```
+
+---
+
+### Step 5: 환경변수 설정 (.env)
+
+```bash
+# PostgreSQL (로컬)
+DATABASE_URL="postgresql://postgres:password@localhost:5432/${PROJECT_NAME}"
+
+# PostgreSQL (Docker)
+DATABASE_URL="postgresql://app_user:your_password@localhost:5432/${PROJECT_NAME}"
+
+# MySQL (로컬)
+DATABASE_URL="mysql://root:password@localhost:3306/${PROJECT_NAME}"
+
+# SQLite (개발용 - DB 서버 불필요)
+DATABASE_URL="file:./${PROJECT_NAME}.db"
+```
+
+---
+
+### Step 6: ORM 마이그레이션
+
+#### SQLAlchemy + Alembic
+
+```bash
+cd backend
+alembic upgrade head
 ```
 
 #### Prisma (Next.js)
 
 ```bash
-# .env 파일에 DATABASE_URL 설정 후
 npx prisma db push
 # 또는
 npx prisma migrate dev --name init
-```
-
-### 환경변수 설정 (.env)
-
-```bash
-# MySQL
-DATABASE_URL="mysql://user:password@localhost:3306/${PROJECT_NAME}"
-
-# PostgreSQL
-DATABASE_URL="postgresql://user:password@localhost:5432/${PROJECT_NAME}"
-
-# SQLite (개발용)
-DATABASE_URL="file:./${PROJECT_NAME}.db"
 ```
 
 ---
