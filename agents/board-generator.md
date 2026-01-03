@@ -140,6 +140,33 @@ alembic revision --autogenerate -m "add_board_tables"
 alembic upgrade head
 ```
 
+**__init__.py 작성 규칙 (CRITICAL):**
+
+```python
+# app/models/__init__.py
+
+# 잘못된 예 - 존재하지 않는 클래스 import
+from app.models.board import (
+    Board, Post, Comment,
+    BoardPermissionEnum,  # ERROR if not defined!
+)
+
+# 올바른 예 - 실제 정의된 클래스만 import
+from app.models.board import (
+    Board,
+    BoardCategory,
+    Post,
+    Comment,
+    Attachment,
+    PostLike,
+)
+
+# Enum은 board.py에 정의한 경우만 추가
+# BoardPermissionEnum, PostStatusEnum 등
+```
+
+> **중요**: __init__.py에서 import하는 모든 클래스/Enum은 반드시 해당 모듈에 정의되어 있어야 함
+
 ### Step 4: 기술 스택 분석
 
 ```bash

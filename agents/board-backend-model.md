@@ -18,13 +18,29 @@ SQLAlchemy 모델과 Pydantic 스키마를 생성합니다.
 
 ### 1. SQLAlchemy 모델 (backend/app/models/board.py)
 
+**주의: __init__.py에서는 실제 정의된 클래스만 import**
+
+```python
+# app/models/__init__.py - 정확한 export 목록
+from app.models.board import (
+    Board,
+    BoardCategory,
+    Post,
+    Comment,
+    Attachment,
+    PostLike,
+    # Enum은 정의한 경우만 export
+)
+```
+
 ```python
 """게시판 관련 모델."""
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import Optional, List, TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, Index
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, Index, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -33,6 +49,23 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.user import User
+
+
+# Enum 정의 (필요시)
+class BoardPermissionEnum(str, Enum):
+    """게시판 권한 레벨"""
+    PUBLIC = "public"      # 모두 접근 가능
+    MEMBER = "member"      # 회원만
+    MANAGER = "manager"    # 관리자만
+    ADMIN = "admin"        # 최고관리자만
+
+
+class PostStatusEnum(str, Enum):
+    """게시글 상태"""
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    HIDDEN = "hidden"
+    DELETED = "deleted"
 
 
 class TimestampMixin:
