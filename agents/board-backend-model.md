@@ -16,6 +16,121 @@ SQLAlchemy 모델과 Pydantic 스키마를 생성합니다.
 
 ---
 
+## Enum 정의 규칙 (CRITICAL)
+
+> **핵심**: DB에 저장되는 값은 **소문자**, Python Enum 이름은 **대문자**
+
+### 올바른 Enum 정의
+
+```python
+from enum import Enum
+
+# ✅ 올바른 예 - str 상속으로 값이 DB에 저장됨
+class BoardPermissionEnum(str, Enum):
+    """게시판 권한 레벨."""
+    PUBLIC = "public"      # DB에 "public" 저장
+    MEMBER = "member"      # DB에 "member" 저장
+    MANAGER = "manager"    # DB에 "manager" 저장
+    ADMIN = "admin"        # DB에 "admin" 저장
+
+
+class PostStatusEnum(str, Enum):
+    """게시글 상태."""
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    HIDDEN = "hidden"
+    DELETED = "deleted"
+```
+
+### SQLAlchemy 컬럼에서 사용
+
+```python
+# ❌ 잘못된 예 - SQLEnum이 이름(대문자)을 저장함
+from sqlalchemy import Enum as SQLEnum
+
+read_permission: Mapped[BoardPermissionEnum] = mapped_column(
+    SQLEnum(BoardPermissionEnum),  # DB에 "PUBLIC" 저장됨!
+    default=BoardPermissionEnum.PUBLIC
+)
+
+
+# ✅ 올바른 예 1 - String 타입 사용 (권장)
+read_permission: Mapped[str] = mapped_column(
+    String(20),
+    default="public"  # 소문자 문자열
+)
+
+
+# ✅ 올바른 예 2 - SQLEnum + values_callable 사용
+read_permission: Mapped[BoardPermissionEnum] = mapped_column(
+    SQLEnum(
+        BoardPermissionEnum,
+        values_callable=lambda x: [e.value for e in x]  # 값(소문자) 사용
+    ),
+    default=BoardPermissionEnum.PUBLIC
+)
+
+
+# ✅ 올바른 예 3 - native_enum=False + 값 지정
+read_permission: Mapped[str] = mapped_column(
+    SQLEnum(
+        "public", "member", "manager", "admin",
+        name="board_permission_enum",
+        native_enum=False  # VARCHAR로 저장
+    ),
+    default="public"
+)
+```
+
+### Enum 값 비교
+
+```python
+# ✅ 올바른 비교
+if board.read_permission == "public":
+    pass
+
+if board.read_permission == BoardPermissionEnum.PUBLIC.value:
+    pass
+
+# str 상속 시 직접 비교 가능
+if board.read_permission == BoardPermissionEnum.PUBLIC:
+    pass  # str 상속했으므로 "public" == BoardPermissionEnum.PUBLIC 는 True
+```
+
+### Pydantic 스키마에서 사용
+
+```python
+from pydantic import BaseModel
+from enum import Enum
+
+class BoardPermissionEnum(str, Enum):
+    PUBLIC = "public"
+    MEMBER = "member"
+
+class BoardCreate(BaseModel):
+    read_permission: BoardPermissionEnum = BoardPermissionEnum.PUBLIC
+
+    # 또는 문자열로 받아서 변환
+    # read_permission: str = "public"
+```
+
+### 마이그레이션과 일치 확인
+
+```python
+# alembic/versions/xxx_create_boards.py
+
+# ❌ 잘못된 예 - 대문자
+sa.Enum('PUBLIC', 'MEMBER', 'MANAGER', 'ADMIN', name='permission_enum')
+
+# ✅ 올바른 예 - 소문자
+sa.Enum('public', 'member', 'manager', 'admin', name='permission_enum')
+
+# ✅ 권장 - VARCHAR 사용 (Enum 타입 피하기)
+sa.Column('read_permission', sa.String(20), default='public')
+```
+
+---
+
 ## 인덱스/제약조건 명명 규칙 (CRITICAL)
 
 > **인덱스 이름 충돌 방지**: 반드시 테이블명을 접두사로 포함!

@@ -35,6 +35,108 @@ model: haiku
 
 ---
 
+## SQLAlchemy Enum 패턴 (CRITICAL)
+
+> **문제**: `SQLEnum(MyEnum)`은 enum의 **name**(대문자)을 저장, 마이그레이션은 **value**(소문자) 사용
+
+### 문제 상황
+
+```python
+# Python Enum 정의
+class TenantStatusEnum(str, Enum):
+    ACTIVE = "active"      # name=ACTIVE, value=active
+    INACTIVE = "inactive"  # name=INACTIVE, value=inactive
+
+# ❌ 문제 발생 - SQLEnum이 name(대문자)을 사용
+status: Mapped[TenantStatusEnum] = mapped_column(
+    SQLEnum(TenantStatusEnum),  # DB에 "ACTIVE" 저장됨!
+    default=TenantStatusEnum.ACTIVE
+)
+
+# 마이그레이션에서는 소문자 사용
+sa.Enum('active', 'inactive', name='tenant_status_enum')
+# → 불일치! DB는 'active' 기대, 모델은 'ACTIVE' 저장
+```
+
+### 해결 방법
+
+```python
+# ✅ 해결 1: values_callable 사용 (권장)
+from sqlalchemy import Enum as SQLEnum
+
+status: Mapped[TenantStatusEnum] = mapped_column(
+    SQLEnum(
+        TenantStatusEnum,
+        values_callable=lambda x: [e.value for e in x]  # value(소문자) 사용!
+    ),
+    default=TenantStatusEnum.ACTIVE
+)
+
+
+# ✅ 해결 2: String 타입 사용 (가장 안전)
+status: Mapped[str] = mapped_column(
+    String(20),
+    default="active"  # 직접 소문자 문자열
+)
+
+
+# ✅ 해결 3: 문자열 Enum 직접 정의
+status: Mapped[str] = mapped_column(
+    SQLEnum(
+        "active", "inactive", "suspended",
+        name="tenant_status_enum",
+        native_enum=False  # VARCHAR로 저장
+    ),
+    default="active"
+)
+```
+
+### Tenant 모델 예시 (수정된 버전)
+
+```python
+from enum import Enum
+from sqlalchemy import Enum as SQLEnum
+
+class TenantStatusEnum(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    SUSPENDED = "suspended"
+
+class Tenant(Base):
+    __tablename__ = "tenants"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+
+    # ✅ values_callable로 소문자 값 사용
+    status: Mapped[TenantStatusEnum] = mapped_column(
+        SQLEnum(
+            TenantStatusEnum,
+            values_callable=lambda x: [e.value for e in x],
+            name="tenant_status_enum"
+        ),
+        default=TenantStatusEnum.ACTIVE
+    )
+
+    # 또는 String 사용
+    # status: Mapped[str] = mapped_column(String(20), default="active")
+```
+
+### 마이그레이션 일치 확인
+
+```python
+# alembic revision 파일
+
+# Enum 값은 반드시 소문자로!
+sa.Column(
+    'status',
+    sa.Enum('active', 'inactive', 'suspended', name='tenant_status_enum'),
+    default='active'
+)
+```
+
+---
+
 ## SQLAlchemy Relationship 패턴 (CRITICAL)
 
 > **에러가 많이 발생하는 부분입니다. 반드시 이 패턴을 따르세요.**
