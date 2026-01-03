@@ -96,7 +96,51 @@ WHERE TABLE_SCHEMA = DATABASE()
 
 → `board-schema.md`의 스키마 참조하여 생성
 
-### Step 3: 기술 스택 분석
+### Step 3: Python 모델 생성 순서 (CRITICAL)
+
+> **SQLAlchemy 사용 시 반드시 준수**
+
+```
+1. 모델 클래스 파일 생성 (Board, Post, Comment 등)
+2. __init__.py 업데이트 (import 추가)
+3. alembic/env.py에서 Base import 확인
+```
+
+**주의사항:**
+
+```python
+# app/models/__init__.py - 조건부 import 패턴
+
+# 잘못된 예 - 모델이 없으면 ImportError
+from app.models.shared import Board, Post, Comment  # ERROR if not exists!
+
+# 올바른 예 - 안전한 import
+try:
+    from app.models.board import Board, Post, Comment
+except ImportError:
+    pass  # 모델이 아직 생성되지 않음
+
+# 또는 - 존재 여부 확인 후 import
+import importlib.util
+if importlib.util.find_spec("app.models.board"):
+    from app.models.board import Board, Post, Comment
+```
+
+**모델 생성 순서:**
+
+```bash
+# 1. 먼저 모델 파일 생성
+app/models/board.py  # Board, Post, Comment, Attachment, Like
+
+# 2. 그 다음 __init__.py 업데이트
+app/models/__init__.py
+
+# 3. 마지막으로 마이그레이션
+alembic revision --autogenerate -m "add_board_tables"
+alembic upgrade head
+```
+
+### Step 4: 기술 스택 분석
 
 ```bash
 # 1. Backend 기술 스택 확인
