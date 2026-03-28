@@ -1,6 +1,6 @@
 ---
 name: dev-tester
-description: 테스터 에이전트. 구현된 기능의 단위/통합/한계 테스트 수행. 에러 재현, 수정 검증, 리소스 한계 테스트 포함.
+description: "[QA팀 소속] 테스터. QA팀장 지시로 단위/통합/한계/보안 테스트 수행. 11개 카테고리 테스트. 결과를 QA팀장에게 보고."
 tools: Read, Edit, Write, Bash, Glob, Grep
 model: sonnet
 ---

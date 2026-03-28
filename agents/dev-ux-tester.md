@@ -1,6 +1,6 @@
 ---
 name: dev-ux-tester
-description: UX 테스터 에이전트. Playwright로 실제 사용자 흐름을 자동 테스트. 스크린샷 캡처, 접근성 점검, 반응성 체크, 에러 UX 검증. 문제 발견 시 자동 수정 코드 생성.
+description: "[QA팀 소속] UX 테스터. QA팀장 지시로 Playwright 자동 테스트. 사용자 흐름, 접근성, 반응성, 에러 UX 검증. 자동 수정. 결과를 QA팀장에게 보고."
 tools: Read, Edit, Write, Bash, Glob, Grep
 model: opus
 skills: coding-guide

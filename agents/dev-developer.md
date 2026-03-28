@@ -1,6 +1,6 @@
 ---
 name: dev-developer
-description: 개발자 에이전트. 설계서를 받아 실제 코드 구현. 백엔드/프론트엔드/스키마를 병렬 개발. coding-guide 준수.
+description: "[개발팀 소속] 개발자. 개발팀장 지시로 모듈별 코드 구현. 백엔드/프론트엔드/스키마 담당. 완료 후 개발팀장에게 보고. coding-guide 준수."
 tools: Read, Edit, Write, Bash, Glob, Grep
 model: sonnet
 skills: coding-guide, modular-check, refactor

@@ -1,6 +1,6 @@
 ---
 name: dev-tracker
-description: 개발 추적 관리자. 모든 작업 항목을 세부 체크리스트로 생성/관리. 백엔드, 프론트엔드, 기획, 테스트, 함수 단위까지 추적. 실시간 진행 문서 자동 갱신.
+description: "[전팀 공통] 추적 관리자. 모든 팀의 작업 항목을 함수 단위까지 체크리스트로 추적. DASHBOARD.md 실시간 갱신. 팀장들의 진행 현황 조회 지원."
 tools: Read, Edit, Write, Bash, Glob, Grep
 model: sonnet
 ---

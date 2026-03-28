@@ -1,6 +1,6 @@
 ---
 name: dev-planner
-description: 설계자 에이전트. 리서처 결과를 받아 아키텍처 설계, 모듈 분리, 인터페이스 정의, 데이터 흐름 설계. 개발자에게 전달할 상세 설계서 산출.
+description: "[기획팀 소속] 설계자. 기획팀장 지시로 아키텍처 설계, 모듈 분리, 인터페이스 정의, 데이터 흐름 설계. 설계서를 기획팀장에게 보고."
 tools: Read, Write, Bash, Glob, Grep
 model: opus
 ---

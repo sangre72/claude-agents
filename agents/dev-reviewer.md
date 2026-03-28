@@ -1,6 +1,6 @@
 ---
 name: dev-reviewer
-description: 리뷰어/사용자 관점 에이전트. 완성된 기능의 사용성, UX 흐름, 에러 처리, 코드 품질을 점검. 개선 제안 산출.
+description: "[개발팀 소속] 코드 리뷰어. 개발팀장 지시로 코드 품질, 패턴 일관성, 에러 처리, 성능을 점검. 리뷰 결과를 개발팀장에게 보고."
 tools: Read, Write, Bash, Glob, Grep
 model: opus
 ---
