@@ -35,7 +35,7 @@
   팀원:      팀원:   팀원:    팀원:
   사용자리서처 UI×N   개발자×N  테스터×N
   기술리서처×N UX×N   리뷰어×N  UX테스터×N
-  설계자×N   시스템×N
+  설계자×N   시스템×N          보안테스터×N
   평가자
 ```
 
@@ -62,7 +62,177 @@ QA팀장 → 기획팀장: 테스트 결과 보고
 
 ---
 
+## Gitignore 규칙 (프로젝트 초기화 시 자동 적용)
+
+`/dev` 명령 최초 실행 시 `.gitignore`에 다음 패턴이 없으면 자동 추가:
+
+```gitignore
+# === Dev Process Outputs (auto-managed) ===
+
+# 테스트 산출물 (실행마다 재생성)
+test-results/
+playwright-report/
+blob-report/
+tests/screenshots/
+
+# docs/ 디렉토리는 Git에 포함 (산출물 이력 추적)
+# 단, 아래는 제외:
+docs/ux-test/screenshots/    # UX 테스트 스크린샷 (대용량)
+docs/tracker/*.tmp            # 트래커 임시 파일
+```
+
+### Gitignore 정책
+
+| 구분 | Git 포함 여부 | 사유 |
+|------|-------------|------|
+| `docs/planning/` | ✅ 포함 | 요구사항/계획 이력 추적 필요 |
+| `docs/research/` | ✅ 포함 | 리서치 결과 재참조 |
+| `docs/design/` | ✅ 포함 | 설계 문서 이력 |
+| `docs/dev/` | ✅ 포함 | 플로우/모듈 설계 이력 |
+| `docs/test/` | ✅ 포함 | 테스트 전략/리포트 |
+| `docs/evaluation/` | ✅ 포함 | 평가 결과 비교 |
+| `docs/meetings/` | ✅ 포함 | 회의록 |
+| `docs/review/` | ✅ 포함 | 리뷰 결과 |
+| `docs/tracker/` | ✅ 포함 | 대시보드/체크리스트 |
+| `docs/ux-test/screenshots/` | ❌ 제외 | 대용량 이미지 |
+| `test-results/` | ❌ 제외 | Playwright 자동 생성 |
+| `tests/screenshots/` | ❌ 제외 | 테스트 스크린샷 |
+| `playwright-report/` | ❌ 제외 | 리포트 HTML |
+
+---
+
+## 산출물 관리 규칙
+
+### 파일명 규칙
+
+```
+docs/{카테고리}/[기능명]_{문서종류}.md
+
+예시:
+docs/planning/image_to_video_requirements.md
+docs/research/image_to_video_user_research.md
+docs/research/image_to_video_tech_research.md
+docs/design/image_to_video_design.md
+docs/dev/image_to_video_flow.md
+docs/dev/image_to_video_modules.md
+docs/test/image_to_video_strategy.md
+docs/test/image_to_video_report.md
+docs/evaluation/image_to_video_phase1_eval.md
+docs/meetings/planning-design_image_to_video.md
+docs/tracker/DASHBOARD.md
+```
+
+### 기능명 규칙
+- 영문 snake_case 사용 (한글 파일명 금지)
+- 간결하게 핵심 키워드만: `image_to_video`, `character_sheet`, `tts_improvement`
+- 동일 기능의 모든 산출물에 같은 기능명 사용
+
+### 산출물 생명주기
+
+```
+생성 → 업데이트(수정→재평가 시) → 아카이브(완료 후)
+
+수정 시: 기존 파일 덮어쓰기 (Git 이력으로 버전 추적)
+완료 후: docs/tracker/DASHBOARD.md에 완료 표시
+```
+
+### 각 Phase별 필수 산출물
+
+| Phase | 필수 산출물 | 생성 주체 |
+|-------|-----------|----------|
+| Phase 0 | `*_user_research.md`, `*_tech_research.md`, `*_research_summary.md` | 리서처들 + 기획팀장 |
+| Phase 1 | `*_requirements.md`, `*_design.md` | 기획팀장 + 설계자 |
+| Phase 2 | `*_ui_spec.md` | 디자인팀장 |
+| Phase 3 | `*_flow.md`, `*_modules.md`, `*_tech_review.md` | 개발팀장 |
+| Phase 4 | (코드 자체가 산출물) | 개발자들 |
+| Phase 5 | `*_strategy.md`, `*_report.md` | QA팀장 |
+| Phase 6 | `*_fix_order.md` (수정지시서, 필요 시) | 기획팀장 |
+| Phase 7 | `*_approval.md` | 기획팀장 |
+| 매 Phase | `*_phase{N}_eval.md` | 평가자 |
+
+---
+
+## 작업 추적 (TRACKER)
+
+### DASHBOARD.md 구조
+
+```markdown
+# Dev Process Dashboard
+**최종 갱신**: {timestamp}
+**현재 기능**: {기능명}
+**현재 Phase**: Phase {N} — {Phase명}
+
+## 진행 현황
+
+| Phase | 상태 | 시작 | 완료 | 산출물 |
+|-------|------|------|------|--------|
+| Phase 0 리서치 | ✅ | HH:MM | HH:MM | research/ |
+| Phase 1 기획 | ✅ | HH:MM | HH:MM | planning/ |
+| Phase 2 디자인 | 🔄 | HH:MM | - | design/ |
+| Phase 3 개발준비 | ⏳ | - | - | - |
+| ...
+
+## 현재 Phase 상세
+
+### 팀장 작업
+| 팀장 | 작업 | 상태 |
+|------|------|------|
+| 기획팀장 | 요구사항 통합 검증 | ✅ |
+| 디자인팀장 | UI 스펙 작성 | 🔄 |
+
+### 팀원 작업
+| 팀원 | 담당 | 상태 | 산출물 |
+|------|------|------|--------|
+| 개발자A | 백엔드 API | ✅ | routers/video.py |
+| 개발자B | 프론트 컴포넌트 | 🔄 | VideoPanel.tsx |
+| UX테스터A | E2E 테스트 | ⏳ | - |
+
+## 이슈
+| # | 심각도 | 내용 | 상태 |
+|---|--------|------|------|
+| 1 | P0 | API 키 노출 | ✅ 해결 |
+| 2 | P1 | 빌드 경고 | 🔄 진행중 |
+
+## 평가 이력
+| Phase | 기획 | 개발 | 테스트 | 사용자 | 결과 |
+|-------|------|------|--------|--------|------|
+| Phase 1 | 92 | 91 | 90 | 93 | PASS |
+```
+
+### 트래커 갱신 타이밍
+- **Phase 시작/완료 시**: 상태 표시 갱신
+- **팀원 작업 분배 시**: 팀원 작업 목록 등록
+- **팀원 작업 완료 시**: 체크 표시 갱신
+- **이슈 발견 시**: 이슈 목록 추가
+- **평가 완료 시**: 평가 이력 추가
+
+---
+
 ## 전체 프로세스 실행 순서
+
+### Phase -1: 이전 작업 확인 (모든 /dev 실행 시 최우선)
+
+```
+⚡ /dev 명령 수신 → 먼저 기존 작업 상태 확인
+
+-1-1. docs/tracker/DASHBOARD.md 존재 여부 확인
+      ├── 존재 → 읽고 현재 Phase/상태 파악
+      │   ├── 미완료 작업 있음 → 사용자에게 보고:
+      │   │   "이전 작업 [{기능명}] Phase {N}에서 중단됨. 이어서 진행할까요?"
+      │   │   ├── 사용자 동의 → 해당 Phase부터 재개
+      │   │   └── 새 작업 요청 → 기존 DASHBOARD 아카이브 후 새로 시작
+      │   └── 모두 완료 → 새 작업으로 진행
+      └── 미존재 → docs/ 디렉토리 전체 스캔
+          ├── 산출물 존재 → 파일명에서 기능명/Phase 추론, 상태 보고
+          └── 산출물 미존재 → 완전 새 시작
+
+-1-2. .gitignore 확인
+      - Dev Process 관련 패턴 누락 시 자동 추가
+      - 이미 Git 추적 중인 파일이 있으면 `git rm --cached` 처리
+
+-1-3. docs/ 디렉토리 구조 확인/생성
+      - 필요한 하위 디렉토리가 없으면 자동 생성
+```
 
 ### Phase 0: 사용자/시장 리서치 (모든 것에 앞서 실행)
 
@@ -207,12 +377,14 @@ QA팀장 → 기획팀장: 테스트 결과 보고
 5-2. QA팀장: 팀원에게 작업 분배 (대규모 병렬)
      - 테스터A~C: 단위 테스트 (모듈별 분배)
      - 테스터D: 통합 테스트 (전체 흐름 E2E)
-     - 테스터E: 보안/한계/동시성 테스트
+     - 테스터E: 한계/동시성 테스트
+     - 보안테스터A~B: OWASP 10대 취약점, API 키 노출, 인젝션, XSS 전문 테스트 (dev-security-tester)
      - UX테스터A~C: Playwright 테스트 (화면별 분배)
 
 5-3. 테스트 단계적 실행
      Phase 5a: 스모크 → Phase 5b: 단위 → Phase 5c: 통합
-     → Phase 5d: 한계/보안 → Phase 5e: UX (Playwright + 자동수정)
+     → Phase 5d: 보안 (보안테스터 10개 카테고리 스캔 + 자동수정)
+     → Phase 5e: 한계/동시성 → Phase 5f: UX (Playwright + 자동수정)
 
 5-4. QA팀장: 결과 통합 → 통합 리포트 작성
      - 산출물: docs/test/[기능명]_report.md
@@ -320,6 +492,154 @@ dev-tracker가 모든 단계에서 상시 실행:
 8. **기획의도 수호**: 모든 테스트 결과는 기획팀장의 의도 판정을 거침
 9. **수정→재테스트 순환**: 수정 시 반드시 QA팀장에게 재테스트 요청
 10. **반복 제한**: 재평가 최대 3회, 수정→재테스트 최대 3회
+
+---
+
+## 보안 규칙 (Security First — 전 Phase 공통)
+
+모든 Phase에서 보안은 기능보다 우선합니다. 보안 위반은 P0로 즉시 수정합니다.
+
+### 1. API 키 / 시크릿 관리
+
+```
+[절대 금지]
+- NEXT_PUBLIC_ 접두사로 시크릿 키 노출 (브라우저 번들에 포함됨)
+- 소스코드에 API 키, 비밀번호, 토큰 하드코딩
+- .env 파일을 Git에 커밋
+- 로그/에러 메시지에 시크릿 포함
+
+[필수 패턴]
+- 외부 API 키 → 서버 사이드 프록시 (Next.js API Routes, Backend)
+- 환경변수 → .env.local (Git 제외), .env.example (키 값 없이 구조만)
+- 클라이언트에서 필요한 키 → 서버 프록시를 통해 간접 호출
+- YouTube API 키 등 클라이언트 필수 키 → localStorage에 사용자 직접 입력
+
+[검증 방법]
+- Phase 4 완료 시: `grep -r "NEXT_PUBLIC_.*KEY\|NEXT_PUBLIC_.*SECRET\|NEXT_PUBLIC_.*TOKEN" src/`
+- 빌드 후: `.next/static/` 내 번들에서 API 키 문자열 검색
+- Phase 5 보안 테스트: 브라우저 DevTools Network 탭에서 키 미노출 확인
+```
+
+### 2. 입력 검증 / 인젝션 방지
+
+```
+[프론트엔드]
+- 사용자 입력을 innerHTML/dangerouslySetInnerHTML에 직접 삽입 금지
+- URL 파라미터를 검증 없이 사용 금지
+- eval(), new Function() 사용 금지
+- React의 기본 XSS 방어 활용 (JSX 자동 이스케이프)
+
+[백엔드]
+- SQL 쿼리에 f-string/format 사용 금지 → ORM 또는 파라미터 바인딩
+- 파일 경로에 사용자 입력 직접 사용 금지 → 경로 순회(../) 방지
+- 커맨드 인젝션 방지: subprocess에 shell=True + 사용자 입력 금지
+- JSON 파싱 시 스키마 검증 (Pydantic 등)
+
+[검증 방법]
+- Phase 4 리뷰어: innerHTML, eval, f-string SQL, shell=True 패턴 검색
+- Phase 5 테스터: 악성 입력 테스트 (`<script>alert(1)</script>`, `'; DROP TABLE`, `../../etc/passwd`)
+```
+
+### 3. 인증 / 권한
+
+```
+[필수 패턴]
+- 인증이 필요한 API → 미들웨어/데코레이터로 일괄 적용 (개별 엔드포인트 누락 방지)
+- JWT/세션 토큰 → HttpOnly, Secure, SameSite=Strict 쿠키
+- 비밀번호 저장 → bcrypt/argon2 해시 (평문 저장 절대 금지)
+- 권한 체크 → 리소스 접근 전 소유자/역할 확인 (IDOR 방지)
+
+[현재 프로젝트 해당 사항]
+- 인증 미구현 시에도 향후 확장 고려하여 API 엔드포인트 설계
+- 파일 업로드/다운로드 경로에 사용자 입력 검증
+```
+
+### 4. CORS / 네트워크 보안
+
+```
+[필수 패턴]
+- CORS 허용 origin → 명시적 도메인 (와일드카드 * 프로덕션 금지)
+- 개발: localhost 허용 / 프로덕션: 실제 도메인만 허용
+- 외부 API 호출 시 timeout 설정 (무한 대기 방지)
+- HTTPS 강제 (프로덕션)
+- Rate Limiting 적용 (API 남용 방지)
+
+[검증 방법]
+- Phase 3 개발팀장: CORS 설정 검토
+- Phase 5 테스터: 다른 origin에서 API 호출 테스트
+```
+
+### 5. 의존성 보안
+
+```
+[필수 패턴]
+- 정기적 취약점 검사: `pnpm audit` / `pip audit`
+- High/Critical 취약점 → P0로 즉시 업데이트
+- 미사용 의존성 제거 (공격 표면 축소)
+- lock 파일(pnpm-lock.yaml, uv.lock) Git 포함 (재현 가능한 빌드)
+
+[검증 방법]
+- Phase 4 완료 시: `pnpm audit --audit-level=high`
+- Phase 5: 의존성 목록 검토, CDN 외부 스크립트 제거 확인
+```
+
+### 6. 파일 업로드 / 다운로드 보안
+
+```
+[필수 패턴]
+- 업로드 파일 타입 검증 (확장자 + MIME + Magic bytes)
+- 업로드 크기 제한
+- 업로드 파일명 새로 생성 (사용자 제공 파일명 사용 금지 → 경로 순회)
+- 저장 경로를 웹 루트 밖으로
+- 다운로드 시 Content-Disposition: attachment
+
+[현재 프로젝트 해당 사항]
+- Whisper 오디오 업로드: 파일 크기/형식 검증
+- 캐릭터 시트 이미지: 업로드 경로 검증
+- 프로젝트 JSON: 스키마 검증 후 저장
+```
+
+### 7. 에러 처리 / 정보 노출 방지
+
+```
+[절대 금지]
+- 스택 트레이스를 사용자에게 노출 (프로덕션)
+- DB 쿼리/스키마 정보 에러 메시지에 포함
+- 내부 파일 경로 노출
+- 빈 catch 블록 (에러 삼킴)
+
+[필수 패턴]
+- 사용자: 한국어 친화적 에러 메시지
+- 개발자: 서버 로그에 상세 에러 기록
+- 프로덕션: Error Boundary로 앱 크래시 방지
+- 에러 응답: 일관된 형식 { success: false, error: "메시지" }
+```
+
+### 8. 보안 체크리스트 (Phase별)
+
+| Phase | 보안 점검 항목 |
+|-------|--------------|
+| Phase 1 (기획) | 민감 데이터 흐름 식별, 인증/권한 요구사항 정의 |
+| Phase 3 (개발준비) | API 키 관리 방식 설계, CORS 정책 설계, 에러 처리 전략 |
+| Phase 4 (구현) | 코드 리뷰 시 OWASP Top 10 체크, `pnpm audit`, API 키 미노출 확인 |
+| Phase 5 (테스트) | 보안 테스트 전용 단계(Phase 5d), 악성 입력/경로 순회/XSS/인젝션 테스트 |
+| Phase 7 (최종) | 번들 내 시크릿 검색, 의존성 취약점 0 High 확인, CORS 최종 확인 |
+
+### 9. 보안 위반 시 대응
+
+```
+보안 이슈 발견 → 즉시 P0 이슈 등록 → 현재 작업 중단
+
+심각도 분류:
+- P0-Critical: API 키 노출, SQL 인젝션, 인증 우회 → 즉시 수정, 다른 작업 모두 중단
+- P0-High: XSS, CSRF, 경로 순회, 빈 catch → 현재 Phase 내 수정
+- P1: 의존성 취약점, CORS 설정 → 다음 Phase 전 수정
+- P2: 정보 노출(스택트레이스 등) → 예정된 수정
+
+대응 흐름:
+QA팀 발견 → QA팀장 → 기획팀장(판정) → 개발팀장(수정) → QA팀장(재테스트)
+개발팀 발견 → 개발팀장(즉시 수정) → QA팀장(확인 테스트)
+```
 
 ---
 

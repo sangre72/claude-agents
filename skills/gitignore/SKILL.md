@@ -102,6 +102,14 @@ pip-wheel-metadata/
 .claude/
 settings.json
 
+# Dev Process (/dev 스킬 산출물 중 제외 대상)
+test-results/
+playwright-report/
+blob-report/
+tests/screenshots/
+docs/ux-test/screenshots/
+docs/tracker/*.tmp
+
 # cache
 .cache/
 *.cache
