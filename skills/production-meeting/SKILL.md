@@ -1,6 +1,6 @@
-# 영상 제작 회의 (Production Meeting)
+# CineBot 영상 제작 (Production Meeting)
 
-대본을 10명의 영상 제작 전문가가 분석하고, 제작 회의를 거쳐 최종 시나리오를 생성합니다.
+AI 영상 제작 시나리오를 생성합니다. C안 3단계 파이프라인 기반.
 
 ## 실행 조건
 
@@ -10,87 +10,76 @@
 - "영상 기획해줘"
 - `/production-meeting`
 
-## 제작진 (10명의 에이전트)
-
-| # | 역할 | 롤모델 | 담당 |
-|---|------|--------|------|
-| 1 | 감독 | 봉준호 | 전체 비전, 장르, 톤, 감정 곡선, 사회적 메시지의 시각적 은유 |
-| 2 | PD | 한스 짐머식 페이싱 | 씬 구성, 빌드업/릴리즈 파도형 리듬 |
-| 3 | 시나리오 작가 | 아론 소킨 | 밀도 높은 대사, 팩트 기반 임팩트, 훅/반전 배치 |
-| 4 | 연출가 | 데이비드 핀처 | 절제된 연기, 미세한 눈빛/제스처, 캐릭터 디테일 |
-| 5 | 촬영 감독 | 로저 디킨스 | 원테이크 카메라, 렌즈/DOF, 3점 조명 |
-| 6 | 미술 감독 | 나단 크롤리 | 미니멀+임팩트 세트, 소품, 홀로그래픽 배경 |
-| 7 | 음향 감독 | 한스 짐머 | 서브베이스+스트링스, BGM, 효과음, 음성 톤 |
-| 8 | 편집 감독 | 테렌스 말릭 | 컷 타이밍, 전환 효과, 리듬 패턴 |
-| 9 | 컬러리스트 | 브래드포드 영 | Arrival/Sicario식 색온도, 그레이딩 |
-| 10 | VFX | 더블 네거티브 | 인터스텔라급 미니멀 VFX, 모션 그래픽, 파티클 |
-
-## 실행 흐름
+## 파이프라인 (C안 3단계)
 
 ```
-Step 1: 대본 분석 (10명 동시)
-  각 전문가가 자신의 관점에서 대본을 분석
-  → 10개의 분석 결과 JSON 생성
-
-Step 2: 제작 회의 (종합)
-  10명의 분석을 종합하여 충돌 해결 + 최종 합의
-  → 통합 제작 계획 JSON
-
-Step 3: 시나리오 생성
-  제작 계획을 바탕으로 최종 시나리오 생성
-  → 각 씬에 모든 전문가의 디테일이 반영된 video_prompt
+Step 0: Claude 프롬프트 안전 변환 (콘텐츠 모더레이션 우회)
+Step 1: grok-imagine-image (드래프트, $0.02) → 씬 이미지
+Step 2: grok-imagine-image-pro (리파인, $0.07) → 고품질 이미지
+Step 3: grok-imagine-video (I2V, $0.02~0.05/초) → 영상
 ```
 
-## 사용법
+## 제작진 (5명 비주얼 디자이너)
 
-### 입력
-```
-대본: "트럼프 대통령이 관세 50%를 부과했습니다..."
-캐릭터: Emma (뉴스 앵커)
-목표 길이: 60초
-```
+| # | 역할 | 스타일 참조 | 담당 |
+|---|------|-----------|------|
+| 1 | 아트 디렉터 | 신카이 마코토 | 비주얼 톤, 뉴스 주제별 무드 자동 결정 |
+| 2 | 배경 디자이너 | CNN/Bloomberg | 씬별 배경 구체적 묘사, 디스플레이 변경 |
+| 3 | 조명 디자이너 | Makoto Shinkai palette | 빛/색감, bloom/lens flare/light rays |
+| 4 | 캐릭터 연출 | — | action/expression 자연스러운 동작/표정 |
+| 5 | 품질 관리 | — | 품질 태그, 캐릭터 일관성 검증 |
 
-### 출력 (최종 시나리오)
-```json
-{
-  "production_meeting": {
-    "genre": "뉴스/경제",
-    "tone": "긴장감 + 분석적",
-    "reference": "빅쇼트 스타일 경제 해설",
-    "color_palette": ["#1a237e", "#ff6f00", "#fafafa"],
-    "music": "cinematic orchestral, tension building"
-  },
-  "scenes": [
-    {
-      "scene_number": 1,
-      "duration": 8,
-      "narration": "한국어 나레이션",
-      "subtitle": "핵심 자막",
-      "video_prompt": "10명의 전문가 의견이 통합된 시네마틱 프롬프트",
-      "camera": "촬영 감독의 카메라 워크",
-      "action": "연출가의 연기 지시",
-      "expression": "연출가의 표정 지시",
-      "lighting": "촬영 감독의 조명",
-      "background": "미술 감독의 배경",
-      "color_grade": "컬러리스트의 색감",
-      "vfx": "VFX의 시각 효과",
-      "sound": "음향 감독의 사운드",
-      "transition": "편집 감독의 전환",
-      "editing_notes": "편집 감독의 컷 지시"
-    }
-  ]
-}
-```
+## 핵심 규칙 (prompt_rules.py 기준)
 
-## 구현 방식
+### video_prompt
+- 영문 필수, AI 이미지 API에 직접 입력
+- 첫 20-30단어가 최우선, 50-150단어 최적
+- 구체적 색상/감정 (not 'colorful' but 'electric blue and hot pink')
+- 영화 전문용어 금지 (no dolly, crane, f/1.8)
+- montage/split screen 금지
 
-Claude API 호출 최소화 (비용 절감):
-- **1회 호출**: 10명의 역할을 하나의 프롬프트에서 수행
-- 프롬프트 내에서 각 전문가가 순서대로 발언하는 "회의록" 형식
-- 최종 시나리오에 모든 분석이 통합
+### 캐릭터 일관성
+- 씬 1에서 정의 → 모든 씬 word-for-word 동일 복사
+- 변경 가능: 포즈, 표정, 액션, 배경
+- 변경 불가: 머리색, 눈색, 의상, 체형, 나이, 아트 스타일
 
-## 연동
+### 나레이션
+- 내레이터 화법 필수 (장면 묘사/지문 금지)
+- 뉴스: 앵커 스타일 ('~했습니다')
+- 이야기: 스토리텔러 ('~했죠', '~이었습니다')
 
-- `python-server/services/production_meeting_service.py` — 백엔드 서비스
-- `routers/scenario.py` — UI 시나리오 생성에서 호출
-- `telegram_bot/services/news_scenario_service.py` — 텔레그램에서 호출
+### 뉴스 모드 (style: news/breaking/report/anchor)
+- 앵커 상반신만 (waist up), 전신 금지
+- 여성: low-cut black tank top / 남성: open collar dark suit
+- CNN/Bloomberg 스타일 리얼 스튜디오
+- 주제별 무드: 경제=navy+gold, 전쟁=blue+red, 기술=cyan+white
+
+### 일반 모드
+- 스토리 설정에 따라 자유
+- 캐릭터 일관성 + 품질 태그 + action/expression/camera
+
+### 콘텐츠 안전
+- 섹슈얼/테러/인종차별/유아/고어 → Claude가 자동 우회 변환
+- 일반 뉴스 단어(전쟁/납치 등)는 통과
+
+### I2V 프롬프트 (영상 생성)
+- 20-40단어, 동작/카메라/오디오만
+- 이미지에 있는 것을 재서술하지 않음
+- 뉴스: "Audio: no music, quiet ambient"
+- 일반: "Audio: soft [bgm_mood] background music"
+
+## 비용
+
+| 구성 | 480p | 720p |
+|------|------|------|
+| 30초 3씬 | $0.87 (₩1,242) | $1.77 (₩2,528) |
+| 30초 5씬 | $1.05 (₩1,499) | $1.95 (₩2,785) |
+
+## 소스 코드 참조
+
+- `python-server/services/prompt_rules.py` — 프롬프트 규칙 Single Source of Truth
+- `python-server/routers/scenario.py` — UI 시나리오 생성
+- `python-server/routers/grok_video.py` — C안 3단계 파이프라인
+- `python-server/telegram_bot/services/news_scenario_service.py` — 텔레그램
+- `docs/research/grok_video_prompt_guide.md` — 프롬프트 리서치 가이드
+- `docs/research/cinebot_cost_analysis.md` — 비용 분석
