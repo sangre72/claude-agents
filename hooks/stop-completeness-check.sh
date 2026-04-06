@@ -123,6 +123,15 @@ if [ ${#WARNINGS[@]} -gt 0 ]; then
   echo "3. [재검증] 수정 후 빌드 + Playwright 테스트까지 완료해야 종료"
   echo ""
   echo "이 메시지를 무시하고 종료하면 안 됩니다. 위 조치를 수행하세요."
+
+  # 테스트 누락이 있으면 종료 차단 (exit 2 = Claude가 멈출 수 없음)
+  for w in "${WARNINGS[@]}"; do
+    if echo "$w" | grep -q "테스트가 없습니다"; then
+      echo "" >&2
+      echo "⛔ 테스트 미실행으로 종료 차단. 테스트를 실행한 후 다시 시도하세요." >&2
+      exit 2
+    fi
+  done
 fi
 
 exit 0
