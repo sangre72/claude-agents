@@ -109,16 +109,26 @@
 
 ---
 
-## Playwright 테스트 (M, L만)
+## 테스트 (M, L 필수 — 프론트/백엔드 모두)
 
-웹 UI 변경 시 필수. 빌드만 확인하고 넘어가면 안 됨.
+**코드 변경 = 테스트 필수. 프론트만이 아니라 백엔드 API도.**
 
 ```bash
 npx playwright test tests/target-test.spec.ts --reporter=list
 ```
 
-테스트 포함: page.on('pageerror'), page.on('requestfailed'), page.screenshot().
-범위: ① 직접 기능 ② 연계 기능(탭 간 데이터) ③ 에러 시나리오.
+Playwright로 API + UI 둘 다 테스트:
+```typescript
+// API 테스트 (백엔드 변경 시)
+const res = await page.request.post('http://localhost:15000/slideshow/generate', { data: {...} });
+expect(res.status()).toBe(200);
+
+// UI 테스트 (프론트 변경 시)
+await page.click('button');
+await expect(page.locator('.result')).toBeVisible();
+```
+
+범위: ① 변경한 API 엔드포인트 ② UI 직접 기능 ③ 연계 기능 ④ 에러 시나리오.
 
 ---
 
