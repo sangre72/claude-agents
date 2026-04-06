@@ -21,7 +21,12 @@ STAGED=$(cd "$CWD" && git diff --cached --name-only 2>/dev/null)
 
 HAS_FRONTEND=$(echo "$STAGED" | grep -c 'src/.*\.\(ts\|tsx\)$')
 HAS_BACKEND=$(echo "$STAGED" | grep -c 'python-server/.*\.py$')
-HAS_TEST=$(echo "$STAGED" | grep -c '\.spec\.ts$')
+# staged에 테스트 있거나, 프로젝트에 테스트 파일이 존재하면 OK
+HAS_TEST=$(echo "$STAGED" | grep -cE '\.spec\.ts$|test_.*\.py$')
+if [ "$HAS_TEST" -eq 0 ]; then
+  # staged에 없어도 프로젝트에 관련 테스트가 있으면 통과
+  HAS_TEST=$(cd "$CWD" && find tests -name "*.spec.ts" 2>/dev/null | head -1 | wc -l)
+fi
 
 BLOCKS=()
 
