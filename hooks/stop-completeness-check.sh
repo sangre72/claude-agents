@@ -84,6 +84,18 @@ if [ -n "$NEW_TSX" ]; then
   done
 fi
 
+# ─── 5. 막다른 에러 UX 감지 (수정된 .tsx 파일에서) ───
+NEW_TSX=$(echo "$CHANGED" | grep -E 'src/.*\.tsx$')
+if [ -n "$NEW_TSX" ]; then
+  for f in $NEW_TSX; do
+    [ ! -f "$CWD/$f" ] && continue
+    DEADEND=$(grep -n -E "먼저.*해주세요|먼저.*하세요|먼저.*작성|먼저.*선택|먼저.*생성" "$CWD/$f" 2>/dev/null | grep -v '^\s*//' | head -2)
+    if [ -n "$DEADEND" ]; then
+      WARNINGS+=("${f##*/}에 '먼저 X 하세요' 에러가 있습니다. 사용자에게 에러 대신 자동 안내/실행 UI를 제공하세요.")
+    fi
+  done
+fi
+
 # ─── 결과 출력 ───
 if [ ${#WARNINGS[@]} -gt 0 ]; then
   echo "━━━ E2E 완성도 검증: 기획 관점 검토 필수 ━━━"
