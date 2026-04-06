@@ -59,7 +59,7 @@ if [ "$HAS_BACKEND" -gt 0 ] && [ "$HAS_FRONTEND" -eq 0 ]; then
 fi
 
 # ─── 4. 코드 수정했는데 테스트 없음 (프론트 + 백엔드 모두) ───
-HAS_TEST=$(echo "$CHANGED" | grep -c '\.spec\.ts$\|test_.*\.py$\|.*_test\.py$')
+HAS_TEST=$(echo "$CHANGED" | grep -cE '\.spec\.ts$|test_.*\.py$|.*_test\.py$')
 if [ "$HAS_FRONTEND" -gt 0 ] && [ "$HAS_TEST" -eq 0 ]; then
   WARNINGS+=("프론트엔드 코드를 수정했지만 테스트가 없습니다. Playwright 테스트를 작성/실행하세요.")
 fi
